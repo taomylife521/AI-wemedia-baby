@@ -1,0 +1,23 @@
+{
+  "platform_name": "kuaishou",
+  "display_name": "快手",
+  "base_url": "https://cp.kuaishou.com",
+  "login_url": "https://cp.kuaishou.com/login",
+  "publish_url": "https://cp.kuaishou.com/publish",
+  "supported_formats": {
+    "video": ["mp4", "mov"],
+    "image": ["jpg", "png"]
+  },
+  "max_file_size": {
+    "video": 1073741824,
+    "image": 10485760
+  },
+  "upload_timeout": 1800,
+  "publish_interval": {
+    "min": 60,
+    "max": 300
+  },
+  "selectors_file": "config/selectors/kuaishou_selectors.json",
+  "status": "reserved"
+}
+

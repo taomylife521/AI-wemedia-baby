@@ -1,0 +1,159 @@
+/* 全局字体设置 */
+QWidget {
+    font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+    font-size: 14px;
+    color: {{TEXT_PRIMARY}};
+}
+
+/* 标题样式 */
+QLabel#TitleLabel {
+    font-size: 24px;
+    font-weight: bold;
+    color: {{TEXT_PRIMARY}};
+}
+QLabel#SubtitleLabel {
+    font-size: 18px;
+    font-weight: 600;
+    color: {{TEXT_PRIMARY}};
+}
+QLabel#BodyLabel {
+    font-size: 14px;
+    color: {{TEXT_PRIMARY}};
+}
+QLabel#CaptionLabel {
+    font-size: 12px;
+    color: {{TEXT_SECONDARY}};
+}
+
+/* 卡片容器样式 */
+QFrame#CardWidget {
+    background-color: {{BG_CARD}};
+    border: 1px solid {{BORDER_DEFAULT}};
+    border-radius: 8px;
+}
+
+/* 滚动条样式 */
+QScrollBar:vertical {
+    border: none;
+    background: transparent;
+    width: 8px;
+    margin: 0px 0px 0px 0px;
+}
+QScrollBar::handle:vertical {
+    background: {{SCROLL_HANDLE}};
+    min-height: 20px;
+    border-radius: 4px;
+}
+QScrollBar::handle:vertical:hover {
+    background: {{BORDER_DEFAULT}};
+}
+QScrollBar::sub-line:vertical, QScrollBar::add-line:vertical {
+    border: none;
+    background: none;
+    height: 0px;
+}
+QScrollBar:horizontal {
+    border: none;
+    background: transparent;
+    height: 8px;
+    margin: 0px 0px 0px 0px;
+}
+QScrollBar::handle:horizontal {
+    background: {{SCROLL_HANDLE}};
+    min-width: 20px;
+    border-radius: 4px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: {{BORDER_DEFAULT}};
+}
+QScrollBar::sub-line:horizontal, QScrollBar::add-line:horizontal {
+    border: none;
+    background: none;
+    width: 0px;
+}
+
+/* ToolTip 样式 */
+QToolTip {
+    color: {{TEXT_PRIMARY}};
+    background-color: {{BG_CARD}};
+    border: 1px solid {{BORDER_DEFAULT}};
+    border-radius: 4px;
+    padding: 4px;
+}
+
+/* 列表和表格选中样式 */
+QTableWidget, QListWidget {
+    background-color: transparent;
+    border: none;
+    gridline-color: {{BORDER_DEFAULT}};
+}
+
+QTableWidget::item:selected, QListWidget::item:selected {
+    background-color: {{BG_SELECTED}};
+    color: {{TEXT_PRIMARY}};
+    border-radius: 4px;
+}
+
+QTableWidget::item:hover, QListWidget::item:hover {
+    background-color: {{BG_HOVER}};
+    border-radius: 4px;
+}
+
+QTableWidget::item:selected:hover, QListWidget::item:selected:hover {
+    background-color: {{BG_SELECTED_HOVER}};
+}
+
+/* 表头样式 (如果默认不适配) */
+QHeaderView::section {
+    background-color: transparent;
+    color: {{TEXT_SECONDARY}};
+    border: none;
+    border-right: 1px solid transparent;
+    padding: 4px;
+}
+
+/* 浏览器组件样式 */
+#browserToolbar {
+    background-color: {{BG_MAIN}};
+    border-top: 1px solid {{BORDER_DEFAULT}};
+}
+#urlEdit {
+    background-color: {{INPUT_BG}};
+    border: none;
+    border-radius: 16px;
+    padding: 8px 16px;
+    font-size: 13px;
+    color: {{TEXT_PRIMARY}};
+}
+#urlEdit:focus {
+    background-color: {{BG_CARD}};
+    border: 2px solid {{THEME_BLUE}};
+}
+#browserStatusBar {
+    background-color: {{BG_MAIN}};
+    border-top: 1px solid {{BORDER_DEFAULT}};
+    padding-bottom: 2px;
+}
+#statusLabel {
+    color: {{TEXT_SECONDARY}};
+    font-size: 11px;
+}
+#progressLabel {
+    color: {{THEME_BLUE}};
+    font-size: 11px;
+}
+
+/* 空白页提示组件 */
+EmptyBrowserWidget {
+    background-color: {{BG_MAIN}};
+    border-radius: 8px;
+}
+
+/* 日志文本框 */
+#LogTextEdit {
+    background-color: {{INPUT_BG}};
+    border: 1px solid {{BORDER_DEFAULT}};
+    border-radius: 4px;
+    padding: 5px;
+    color: {{TEXT_PRIMARY}};
+}

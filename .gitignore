@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+*~
+
+# 数据文件 (需根据新架构调整)
+data/database.db
+data/database.db-journal
+data/cookies/
+data/keys/
+
+# 日志文件
+logs/
+
+# 配置文件
+# config/*.json (根据需求可能需要保留部分非敏感配置)
+config/license.key
+config/pro_config.json
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 打包文件与产物
+*.exe
+*.msi
+*.dmg
+dist_nuitka/
+*.build/
+tools/ffmpeg/
+
+# Gemini Agent
+.gemini/
+
+# Coverage
+htmlcov/
+.coverage
+
+# 专业版闭源内容（不上传到开源仓库）
+src/plugins/pro/
+src/pro_features/

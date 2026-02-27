@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "媒小宝更新清单",
+  "description": "用于版本管理和自动更新的配置文件",
+  "current_version": "1.0.0",
+  "last_check": null,
+  "update_server": {
+    "base_url": "https://your-update-server.com/api/updates",
+    "check_interval_hours": 24,
+    "enabled": true
+  },
+  "local_config": {
+    "auto_check_on_startup": true,
+    "auto_download": false,
+    "show_changelog": true,
+    "skip_versions": []
+  },
+  "history": []
+}

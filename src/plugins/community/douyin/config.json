@@ -1,0 +1,13 @@
+{
+    "platform_id": "douyin",
+    "platform_name": "抖音",
+    "login_url": "https://creator.douyin.com/",
+    "cookie_domain": ".douyin.com",
+    "cookie_keys": ["sessionid", "passport_csrf_token"],
+    "content_types": ["video", "image"],
+    "limits": {
+        "title_max_length": 55,
+        "description_max_length": 2200,
+        "max_topics": 5
+    }
+}
