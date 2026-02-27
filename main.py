@@ -506,12 +506,7 @@ def main():
 
                         # 1. 停止批量任务执行器 (防止后台线程残留)
                         try:
-                            # 兼容新老架构的引用路径
-                            try:
-                                from src.pro_features.batch.services.batch_task_manager_async import BatchTaskManagerAsync
-                            except ImportError:
-                                from src.services.batch_task.batch_task_manager_async import BatchTaskManagerAsync
-                                
+                            from src.pro_features.batch.services.batch_task_manager_async import BatchTaskManagerAsync
                             if sl.is_registered(BatchTaskManagerAsync):
                                 batch_manager = sl.get(BatchTaskManagerAsync)
                                 if hasattr(batch_manager, 'shutdown'):
