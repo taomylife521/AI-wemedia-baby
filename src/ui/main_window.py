@@ -77,10 +77,10 @@ class MainWindow(FluentWindow):
         
         if os.path.exists(icon_png):
             self.setWindowIcon(QIcon(icon_png))
-            logger.info(f"MainWindow 设置图标 (PNG): {icon_png}")
+            logger.debug(f"MainWindow 设置图标 (PNG): {icon_png}")
         elif os.path.exists(icon_ico):
             self.setWindowIcon(QIcon(icon_ico))
-            logger.info(f"MainWindow 设置图标 (ICO): {icon_ico}")
+            logger.debug(f"MainWindow 设置图标 (ICO): {icon_ico}")
         else:
             logger.warning(f"MainWindow 未找到图标: {icon_png}")
 
@@ -88,7 +88,7 @@ class MainWindow(FluentWindow):
         self._setup_navigation()
         self._setup_status_bar()
         self._init_services()
-        logger.info("主窗口初始化完成 (Lazy Loading Mode)")
+        logger.debug("主窗口初始化完成 (Lazy Loading Mode)")
 
     def _get_or_create_page(self, page_name: str):
         """按需获取或创建页面实例 (Factory Pattern + Lazy Loading)"""
@@ -98,7 +98,7 @@ class MainWindow(FluentWindow):
             
         # 2. 使用工厂创建
         try:
-            logger.info(f"正在惰性加载页面: {page_name} ...")
+            logger.debug(f"正在惰性加载页面: {page_name} ...")
             page_instance = self.page_factory.create_page(page_name, self)
             
             if not page_instance:
@@ -114,7 +114,7 @@ class MainWindow(FluentWindow):
                 if self.stackedWidget.indexOf(page_instance) == -1:
                     self.stackedWidget.addWidget(page_instance)
                     
-            logger.info(f"页面加载完成: {page_name}")
+            logger.debug(f"页面加载完成: {page_name}")
             return page_instance
         except Exception as e:
             logger.error(f"加载页面异常 {page_name}: {e}", exc_info=True)
@@ -134,7 +134,7 @@ class MainWindow(FluentWindow):
                 self.event_bus.subscribe("TaskFailedEvent", self._on_task_failed)
                 self.event_bus.subscribe("PublishCompletedEvent", self._on_publish_completed)
                 
-                logger.info("主窗口事件监听已注册")
+                logger.debug("主窗口事件监听已注册")
         except Exception as e:
             logger.error(f"初始化主窗口服务失败: {e}")
 
@@ -192,7 +192,7 @@ class MainWindow(FluentWindow):
         # 窗口显示后，设置为最大化（只在首次显示时）
         if not hasattr(self, '_maximized_set'):
             self._maximized_set = True
-            logger.info("窗口显示完成")
+            logger.debug("窗口显示完成")
         
         # 延迟初始化浏览器页面UI
         QTimer.singleShot(100, self._init_browser_page_ui)
@@ -215,14 +215,14 @@ class MainWindow(FluentWindow):
             if hasattr(nav, 'expand'):
                 # useAni=False 禁用动画，立即展开
                 nav.expand(useAni=False)
-                logger.info("已通过 expand() 强制展开导航栏")
+                logger.debug("已通过 expand() 强制展开导航栏")
                 return
             
             # 方法2: 使用 setDisplayMode
             if hasattr(nav, 'setDisplayMode'):
                 from qfluentwidgets import NavigationDisplayMode
                 nav.setDisplayMode(NavigationDisplayMode.EXPAND)
-                logger.info("已通过 setDisplayMode() 强制展开导航栏")
+                logger.debug("已通过 setDisplayMode() 强制展开导航栏")
                 
         except Exception as e:
             logger.warning(f"强制展开导航栏失败: {e}")
@@ -354,12 +354,12 @@ class MainWindow(FluentWindow):
         # 尝试修复：关闭亚克力效果，可能会导致背景色差
         if hasattr(self.navigationInterface, 'setAcrylicEnabled'):
             self.navigationInterface.setAcrylicEnabled(False)
-            logger.info("已关闭导航栏亚克力效果以修复背景问题")
+            logger.debug("已关闭导航栏亚克力效果以修复背景问题")
         
         # 启用手风琴模式 (Accordion)
         if hasattr(self.navigationInterface, 'setCollapsible'):
             self.navigationInterface.setCollapsible(True)
-            logger.info("已启用导航栏可折叠模式")
+            logger.debug("已启用导航栏可折叠模式")
         
         # 启用返回顶部 (如果支持)
         if hasattr(self.navigationInterface, 'setReturnToStartPos'):
@@ -397,7 +397,7 @@ class MainWindow(FluentWindow):
         self._setup_accordion_behavior()  # 设置手风琴效果
         self._disable_all_indicators()  # 确保所有导航项指示器被禁用
         self._optimize_page_transitions()  # 优化页面切换动画
-        logger.info("导航栏设置完成 (Config Driven)")
+        logger.debug("导航栏设置完成 (Config Driven)")
 
     def _remove_indicators(self):
         """移除导航栏指示器"""
@@ -498,7 +498,7 @@ class MainWindow(FluentWindow):
                         self._on_parent_clicked(ck, fk)
                 )
         
-        logger.info(f"手风琴导航行为已设置，动画时长: {ANIMATION_DURATION}ms")
+        logger.debug(f"手风琴导航行为已设置，动画时长: {ANIMATION_DURATION}ms")
     
     def _on_parent_clicked(self, clicked_container_key: str, first_child_key: str):
         """处理父级容器点击：分层动画实现优雅过渡
@@ -572,12 +572,12 @@ class MainWindow(FluentWindow):
                 # 设置默认展开模式
                 if hasattr(nav, 'displayMode'):
                     nav.setDisplayMode(NavigationDisplayMode.EXPAND)
-                    logger.info("导航栏已设置为默认展开模式")
+                    logger.debug("导航栏已设置为默认展开模式")
                 
                 # 连接显示模式变更信号
                 if hasattr(nav, 'displayModeChanged'):
                     nav.displayModeChanged.connect(self._on_display_mode_changed)
-                    logger.info("已连接导航栏模式变更信号")
+                    logger.debug("已连接导航栏模式变更信号")
                     
         except Exception as e:
             logger.warning(f"设置导航栏宽度及模式失败: {e}")
@@ -638,7 +638,7 @@ class MainWindow(FluentWindow):
                         info.deltaY = 20  # 减小滑动距离 (默认76)
                     if hasattr(info, 'deltaX'):
                         info.deltaX = 0   # 禁用水平滑动
-                logger.info(f"已优化页面动画参数: 滑动距离20px")
+                logger.debug(f"已优化页面动画参数: 滑动距离20px")
             
             # Monkey Patch StackedWidget.setCurrentWidget 逻辑已移除
             # 改为重写 MainWindow.switchTo 方法实现
@@ -759,7 +759,7 @@ class MainWindow(FluentWindow):
                         
                         iw.paintEvent = make_enhanced_paint_iw(iw)
             
-            logger.info("所有导航项指示器已禁用，选中背景已增强（导航设置完成后）")
+            logger.debug("所有导航项指示器已禁用，选中背景已增强（导航设置完成后）")
         except Exception as e:
             logger.warning(f"禁用导航指示器失败: {e}")
 
@@ -782,7 +782,7 @@ class MainWindow(FluentWindow):
                 "batch_publish_page": "video_publish_container",
                 # 图文发布
                 "image_single_publish_page": "image_publish_container",
-                "image_batch_publish_page": "image_publish_container",
+                "image_batch_publish_page": "image_batch_publish_container",
                 # 评论互动
                 "comment_page": "interaction_container",
                 "private_message_page": "interaction_container",
@@ -899,7 +899,7 @@ class MainWindow(FluentWindow):
                     self._on_global_toast,
                     priority=0 # 最高优先级，确保UI响应
                 )
-                logger.info("全局事件订阅成功")
+                logger.debug("全局事件订阅成功")
         except Exception as e:
             logger.error(f"初始化事件订阅失败: {e}")
 

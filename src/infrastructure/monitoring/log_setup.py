@@ -78,6 +78,8 @@ def init_log_manager(
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
     logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+    logging.getLogger("apscheduler").setLevel(logging.WARNING)
+    logging.getLogger("tortoise").setLevel(logging.WARNING)
     
     # 记录启动信息
     logging.info(f"日志系统初始化完成: console={logging.getLevelName(console_level)}, file={logging.getLevelName(file_level)}")

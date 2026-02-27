@@ -75,7 +75,7 @@ class WorkspacePage(BasePage):
                 batch_task_manager=batch_task_manager
             )
             
-            logger.info("工作台服务初始化成功")
+            logger.debug("工作台服务初始化成功")
         except Exception as e:
             logger.error(f"初始化工作台服务失败: {e}", exc_info=True)
     

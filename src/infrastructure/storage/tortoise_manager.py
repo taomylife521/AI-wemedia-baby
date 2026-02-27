@@ -99,11 +99,11 @@ async def init_tortoise(db_path: Optional[str] = None) -> None:
         try:
             if hasattr(conn, '_connection') and conn._connection:
                 await conn._connection.execute("PRAGMA foreign_keys=OFF")
-                logger.info("已通过底层连接禁用 SQLite 外键约束")
+                logger.debug("已通过底层连接禁用 SQLite 外键约束")
         except Exception as fk_e:
             logger.warning(f"底层禁用外键约束失败（不影响正常使用）: {fk_e}")
         
-        logger.info("Tortoise ORM SQLite 性能优化 PRAGMA 已设置")
+        logger.debug("Tortoise ORM SQLite 性能优化 PRAGMA 已设置")
     except Exception as e:
         logger.warning(f"设置 SQLite PRAGMA 失败（不影响正常使用）: {e}")
 
@@ -122,7 +122,7 @@ async def init_tortoise(db_path: Optional[str] = None) -> None:
     except Exception as e:
          logger.warning(f"Tortoise ORM 生成表结构失败或报错（可能因表已存在且有变动而安全跳过）: {e}")
 
-    logger.info(f"Tortoise ORM 初始化完成，数据库路径: {db_path}")
+    logger.debug(f"Tortoise ORM 初始化完成，数据库路径: {db_path}")
 
 
 async def close_tortoise() -> None:

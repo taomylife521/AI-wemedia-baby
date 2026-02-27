@@ -29,20 +29,20 @@ class PluginManager:
         if cls._initialized:
             return
 
-        logger.info("正在初始化插件系统...")
+        logger.debug("正在初始化插件系统...")
         
         # 1. 加载社区插件
         cls._load_plugins_from_dir(cls.COMMUNITY_DIR, "src.plugins.community")
         
         # 2. 加载专业版插件 (如果存在)
         if cls.PRO_PLUGINS_DIR.exists():
-            logger.info(f"发现专业版插件目录: {cls.PRO_PLUGINS_DIR}")
+            logger.debug(f"发现专业版插件目录: {cls.PRO_PLUGINS_DIR}")
             cls._load_plugins_from_dir(cls.PRO_PLUGINS_DIR, "src.plugins.pro")
         else:
-            logger.info("专业版插件目录不存在，跳过加载")
+            logger.debug("专业版插件目录不存在，跳过加载")
 
         cls._initialized = True
-        logger.info(f"插件初始化完成. 登录插件: {list(cls._login_plugins.keys())}, 发布插件: {list(cls._publish_plugins.keys())}")
+        logger.debug(f"插件初始化完成. 登录插件: {list(cls._login_plugins.keys())}, 发布插件: {list(cls._publish_plugins.keys())}")
 
     @classmethod
     def _load_plugins_from_dir(cls, plugins_dir: Path, base_package: str):

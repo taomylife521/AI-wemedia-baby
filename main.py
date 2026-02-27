@@ -506,14 +506,19 @@ def main():
 
                         # 1. 停止批量任务执行器 (防止后台线程残留)
                         try:
-                            from src.services.batch.batch_task_manager_async import BatchTaskManagerAsync
+                            # 兼容新老架构的引用路径
+                            try:
+                                from src.pro_features.batch.services.batch_task_manager_async import BatchTaskManagerAsync
+                            except ImportError:
+                                from src.services.batch_task.batch_task_manager_async import BatchTaskManagerAsync
+                                
                             if sl.is_registered(BatchTaskManagerAsync):
                                 batch_manager = sl.get(BatchTaskManagerAsync)
                                 if hasattr(batch_manager, 'shutdown'):
                                     logging.info("正在停止批量任务管理器...")
                                     batch_manager.shutdown()
                         except Exception as e:
-                            logging.warning(f"清理批量任务资源失败: {e}")
+                            logging.warning(f"清理批量任务资源失败 (若模块未加载可忽略): {e}")
 
                         # 2. 停止备份调度器
                         # 注意：BackupManager 可能未被导入，需延迟导入
@@ -547,10 +552,22 @@ def main():
 
                         # 5. 关闭 Tortoise ORM 连接（新架构）
                         try:
-                            await close_tortoise()
-                            logging.info("Tortoise ORM 连接已关闭")
+                            # 避免 qasync 退出期剥夺事件循环导致的 'no running event loop'
+                            # 若没有循环，安全关闭协程对象以防止警告
+                            coro = close_tortoise()
+                            try:
+                                loop = asyncio.get_running_loop()
+                                task = loop.create_task(coro)
+                                done, pending = await asyncio.wait([task], timeout=0.5)
+                                if done:
+                                    logging.info("Tortoise ORM 连接已安全关闭")
+                                else:
+                                    logging.debug("Tortoise ORM 关闭交接后台")
+                            except RuntimeError:
+                                # 捕获 no running event loop
+                                coro.close()
                         except Exception as e:
-                            logging.warning(f"关闭 Tortoise ORM 失败: {e}")
+                            pass
 
                     except Exception as e:
                          logging.error(f"资源清理过程发生错误: {e}")
