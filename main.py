@@ -575,38 +575,46 @@ def main():
                         logging.warning(f"浏览器进程清理失败: {e}")
 
                 # 5. [核心] 清理所有剩余的 asyncio 任务
-                # Windows IOCP 如果不管这些任务，EventLoop 会一直等待它们完成，导致进程不退出
                 try:
-                    # 获取除当前任务外的所有任务
-                    current_task = asyncio.current_task(loop)
-                    pending = [t for t in asyncio.all_tasks(loop) if t is not current_task]
+                    # 获取当前运行的 event loop
+                    try:
+                        current_loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        logging.debug("已无运行中的事件循环，跳过后台任务清理")
+                        current_loop = None
                     
-                    if pending:
-                        logging.info(f"发现 {len(pending)} 个未完成的后台任务，正在执行终止...")
+                    if current_loop:
+                        # 获取除当前任务外的所有任务
+                        current_task = asyncio.current_task(current_loop)
+                        pending = [t for t in asyncio.all_tasks(current_loop) if t is not current_task]
                         
-                        # 全部发送取消请求
-                        for task in pending:
-                            task.cancel()
-                        
-                        # 等待任务取消完成 (设置超时，避免死等)
-                        # 等待任务取消完成 (设置超时，避免死等)
-                        # return_exceptions=True 确保即使某个任务报错也不会打断清理流程
-                        try:
-                            await asyncio.wait(pending, timeout=2.0)
-                        except RuntimeError as e:
-                            # 忽略 "no running event loop" 错误，这在退出阶段很常见
-                            if "no running event loop" not in str(e):
-                                logging.warning(f"等待任务取消时出错: {e}")
-                        
-                        # 再次检查是否还有仍在运行的 (超时未取消)
-                        still_pending = [t for t in pending if not t.done()]
-                        if still_pending:
-                            logging.warning(f"{len(still_pending)} 个后台任务在超时后仍未退出 (将被强行忽略)")
-                        else:
-                            logging.info("所有后台任务已清理完毕")
+                        if pending:
+                            logging.info(f"发现 {len(pending)} 个未完成的后台任务，正在执行终止...")
+                            
+                            # 全部发送取消请求
+                            for task in pending:
+                                task.cancel()
+                            
+                            # 等待任务取消完成 (设置超时，避免死等)
+                            # return_exceptions=True 确保即使某个任务报错也不会打断清理流程
+                            try:
+                                await asyncio.wait(pending, timeout=2.0)
+                            except RuntimeError as e:
+                                # 忽略 "no running event loop" 错误，这在退出阶段很常见
+                                if "no running event loop" not in str(e):
+                                    logging.warning(f"等待任务取消时出错: {e}")
+                            
+                            # 再次检查是否还有仍在运行的 (超时未取消)
+                            still_pending = [t for t in pending if not t.done()]
+                            if still_pending:
+                                logging.warning(f"{len(still_pending)} 个后台任务在超时后仍未退出 (将被强行忽略)")
+                            else:
+                                logging.info("所有后台任务已清理完毕")
                             
                 except Exception as e:
-                    logging.error(f"清理后台任务时出错: {e}")
+                    # 只有未被内层 RuntimeError 静默处理的预期外异常才在此抛出
+                    if "no running event loop" not in str(e):
+                        logging.error(f"清理后台任务时出错: {e}")
 
                 logging.info("资源清理流程结束，准备退出进程")
                 return 0
