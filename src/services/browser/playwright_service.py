@@ -44,6 +44,9 @@ class PlaywrightBrowserService(QObject):
     
     # 账号信息已保存/更新: (account_id)
     account_saved = Signal(str)
+    
+    # 账号昵称更新: (account_id, new_nickname)
+    account_nickname_updated = Signal(str, str)
 
     def __init__(self, account_manager):
         super().__init__()
@@ -74,12 +77,14 @@ class PlaywrightBrowserService(QObject):
                     pass
             
             platform_username = account.get('platform_username', f"user_{account_id}") if account else f"user_{account_id}"
+            profile_folder_name = account.get('profile_folder_name') if account else None
             
             # 2. 启动浏览器 (Headless)
             browser_service = BrowserFactory.get_browser_service(
                 account_id=str(account_id),
                 platform=platform,
-                platform_username=platform_username
+                platform_username=platform_username,
+                profile_folder_name=profile_folder_name
             )
             
             context = await browser_service.launch(headless=True)
@@ -115,6 +120,7 @@ class PlaywrightBrowserService(QObject):
                              await self.account_manager.update_cookie(acc_id_int, new_cookies)
                          if nickname and nickname != platform_username:
                              await self.account_manager.update_platform_username(acc_id_int, nickname)
+                             self.account_nickname_updated.emit(str(account_id), nickname)
                 except Exception as db_e:
                     logger.warning(f"无头验证更新数据库失败: {db_e}")
             else:
@@ -159,17 +165,22 @@ class PlaywrightBrowserService(QObject):
             return browser
         return None
     
-    async def open_browser_for_db_account(self, account_id: int) -> Optional['SimpleBrowserWrapper']:
+    async def open_browser_for_db_account(
+        self, account_id: int, headless: Optional[bool] = None
+    ) -> Optional['SimpleBrowserWrapper']:
         """根据数据库账号ID打开浏览器（模块化方法，供账号库和发布执行器复用）
         
         完整流程：查询账号信息 → 获取平台URL → 启动浏览器 → 注入Cookie → 导航
         
         Args:
             account_id: 数据库中的账号ID（整数）
+            headless: 是否无头模式。None 时默认 False（显示窗口）；发布流程传入与「显示浏览器」勾选一致
             
         Returns:
             浏览器包装实例 SimpleBrowserWrapper，失败时返回 None
         """
+        if headless is None:
+            headless = False  # 账号页等调用不传时默认显示浏览器
         # 1. 查询账号详情
         account = await self.account_manager.get_account_by_id(account_id)
         if not account:
@@ -177,18 +188,21 @@ class PlaywrightBrowserService(QObject):
         
         platform_username = account.get('platform_username', '')
         platform = account.get('platform', '')
+        profile_folder_name = account.get('profile_folder_name')
         
-        logger.info(f"模块化开浏览器: account_id={account_id}, 用户名={platform_username}, 平台={platform}")
+        logger.info(f"模块化开浏览器: account_id={account_id}, 用户名={platform_username}, 平台={platform}, headless={headless}")
         
         # 2. 获取平台 URL
         platform_url = self._get_platform_url(platform)
         
-        # 3. 调用已有方法打开浏览器
+        # 3. 调用已有方法打开浏览器（传入 headless 供发布流程「显示浏览器」勾选生效）
         await self.open_browser_for_account(
             account_id=account_id,
             platform_username=platform_username,
             platform=platform,
-            platform_url=platform_url
+            platform_url=platform_url,
+            profile_folder_name=profile_folder_name,
+            headless=headless,
         )
         
         # 4. 返回浏览器 wrapper
@@ -225,7 +239,9 @@ class PlaywrightBrowserService(QObject):
         account_id: Union[int, str],
         platform_username: str,
         platform: str,
-        platform_url: str
+        platform_url: str,
+        profile_folder_name: Optional[str] = None,
+        headless: bool = False,
     ):
         """为已存在的账号打开 Playwright 浏览器"""
         await self._open_browser_base(
@@ -234,7 +250,9 @@ class PlaywrightBrowserService(QObject):
             platform=platform,
             platform_url=platform_url,
             inject_cookies=True,
-            is_new_account=False
+            is_new_account=False,
+            profile_folder_name=profile_folder_name,
+            headless=headless,
         )
 
     async def open_new_account_window(
@@ -266,7 +284,8 @@ class PlaywrightBrowserService(QObject):
             platform_url=platform_url,
             inject_cookies=False,
             is_new_account=True,
-            fingerprint_config=fingerprint_config
+            fingerprint_config=fingerprint_config,
+            profile_folder_name=profile_id
         )
 
 
@@ -278,19 +297,23 @@ class PlaywrightBrowserService(QObject):
         platform_url: str,
         inject_cookies: bool,
         is_new_account: bool,
-        fingerprint_config: Optional[Dict[str, Any]] = None
+        fingerprint_config: Optional[Dict[str, Any]] = None,
+        profile_folder_name: Optional[str] = None,
+        headless: bool = False,
     ):
         try:
-            logger.info(f"正在启动 Playwright 浏览器 for {platform_username}...")
+            logger.info(f"正在启动 Playwright 浏览器 for {platform_username}... (headless={headless})")
             
-            # 1. 启动浏览器
+            # 1. 启动浏览器（headless 由发布页「显示浏览器」勾选或账号页默认显示决定）
             browser_service = BrowserFactory.get_browser_service(
                 account_id=account_id,
                 platform=platform,
-                platform_username=platform_username
+                platform_username=platform_username,
+                fingerprint_config=fingerprint_config,
+                profile_folder_name=profile_folder_name
             )
             
-            context = await browser_service.launch(headless=False)
+            context = await browser_service.launch(headless=headless)
             if not context:
                 raise Exception("无法启动浏览器服务")
             
@@ -410,6 +433,46 @@ class PlaywrightBrowserService(QObject):
         self.browser_closed.emit(account_id)
         logger.info(f"🎯 已发送浏览器关闭确认信号: {account_id}")
 
+    async def shutdown(self):
+        """应用退出时关闭所有活跃浏览器，避免残留进程。
+        使用短超时快速收尾，不做状态同步与目录清理。
+        """
+        logger.info("PlaywrightBrowserService 开始 shutdown，关闭所有活跃浏览器...")
+        # 1. 取消所有监听任务
+        for account_id, task in list(self._monitor_tasks.items()):
+            try:
+                task.cancel()
+                try:
+                    await asyncio.wait_for(asyncio.shield(task), timeout=0.2)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    pass
+            except Exception:
+                pass
+        self._monitor_tasks.clear()
+
+        # 2. 关闭所有 _active_browsers 中的浏览器（短超时，不阻塞退出）
+        account_ids = list(self._active_browsers.keys())
+        for account_id in account_ids:
+            browser = self._active_browsers.pop(account_id, None)
+            if not browser:
+                continue
+            try:
+                await asyncio.wait_for(browser.close(), timeout=2.0)
+                logger.info(f"shutdown: 已关闭浏览器 account_id={account_id}")
+            except asyncio.TimeoutError:
+                logger.warning(f"shutdown: 关闭 account_id={account_id} 超时，继续退出")
+            except Exception as e:
+                logger.warning(f"shutdown: 关闭 account_id={account_id} 异常: {e}")
+
+        # 3. 关闭临时实例 pw_browser_instance
+        if self.pw_browser_instance:
+            try:
+                await asyncio.wait_for(self.pw_browser_instance.close(), timeout=2.0)
+            except (asyncio.TimeoutError, Exception):
+                pass
+            self.pw_browser_instance = None
+
+        logger.info("PlaywrightBrowserService shutdown 完成")
 
     async def _handle_directory_cleanup(self, account_id: str):
         """处理目录清理"""
@@ -562,6 +625,7 @@ class PlaywrightBrowserService(QObject):
                     acc_id_int = int(account_id)
                     await self.account_manager.update_platform_username(acc_id_int, nickname)
                     logger.info(f"更新账号昵称: {platform_username} -> {nickname}")
+                    self.account_nickname_updated.emit(str(account_id), nickname)
                  except ValueError:
                      pass
             

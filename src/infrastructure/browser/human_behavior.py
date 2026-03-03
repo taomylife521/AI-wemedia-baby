@@ -7,8 +7,8 @@
 import random
 import asyncio
 import logging
-from typing import Optional
-from playwright.async_api import Page
+from typing import Optional, Union
+from playwright.async_api import Page, Locator
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +156,50 @@ class HumanBehavior:
         delay = random.uniform(min_ms / 1000, max_ms / 1000)
         await asyncio.sleep(delay)
     
+    @staticmethod
+    async def click_in_bounds(
+        page: Page,
+        selector_or_locator: Union[str, Locator],
+        inner_margin: Optional[int] = None,
+        move_from_viewport: bool = True,
+    ) -> None:
+        """在元素有效区域内随机选点，先贝塞尔曲线移动再点击，避免固定点中心。
+
+        Args:
+            page: Playwright Page
+            selector_or_locator: 选择器字符串或 Locator
+            inner_margin: 相对元素边界内缩像素，避免点到边缘；None 则取 min(8, 宽高约10%)
+            move_from_viewport: True 时从视口内随机起点移动过去，False 时从元素中心附近移动
+        """
+        locator = page.locator(selector_or_locator) if isinstance(selector_or_locator, str) else selector_or_locator
+        box = await locator.bounding_box()
+        if not box:
+            await locator.click()
+            return
+        x, y, w, h = box["x"], box["y"], box["width"], box["height"]
+        margin = inner_margin if inner_margin is not None else min(8, int(min(w, h) * 0.1))
+        margin = max(0, min(margin, w / 2 - 1, h / 2 - 1))
+        cx = x + margin
+        cy = y + margin
+        cw = max(1, w - 2 * margin)
+        ch = max(1, h - 2 * margin)
+        to_x = cx + random.uniform(0, cw)
+        to_y = cy + random.uniform(0, ch)
+        if move_from_viewport:
+            vp = await page.evaluate("() => ({ w: window.innerWidth, h: window.innerHeight })")
+            vw = vp.get("w") or 800
+            vh = vp.get("h") or 600
+            from_x = random.uniform(0, max(1, vw))
+            from_y = random.uniform(0, max(1, vh))
+        else:
+            from_x = x + w * (0.3 + random.random() * 0.4)
+            from_y = y + h * (0.3 + random.random() * 0.4)
+        await HumanBehavior.mouse_move(page, from_x, from_y, to_x, to_y, steps=random.randint(18, 35))
+        await page.mouse.down()
+        await asyncio.sleep(random.uniform(0.03, 0.12))
+        await page.mouse.up()
+        logger.debug("click_in_bounds: 在元素内随机点点击完成")
+
     @staticmethod
     async def click_with_delay(
         page: Page,

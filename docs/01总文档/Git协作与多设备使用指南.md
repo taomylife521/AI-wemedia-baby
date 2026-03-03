@@ -6,7 +6,7 @@
 
 - **主仓库**：`wemedia-baby` (Public)
   - 包含项目的核心框架、基础服务和开源插件。
-- **子模块**：`src/pro` -> `wemedia-baby-pro` (Private)
+- **子模块**：`src/plugins_pro` -> `wemedia-baby-pro` (Private)
   - 包含所有付费版（Pro）插件、敏感业务逻辑和 Key 配置。
   - 作为独立的 Git 仓库管理，但在主项目中通过 `git submodule` 引用。
 
@@ -23,7 +23,7 @@ git clone https://github.com/chitang818/wemedia-baby.git
 cd wemedia-baby
 ```
 
-此时你会发现 `src/pro` 目录是空的，这是正常的。
+此时你会发现 `src/plugins_pro` 目录是空的，这是正常的。
 
 ### 2.2 第二步：初始化并拉取私有子模块
 
@@ -49,7 +49,7 @@ git submodule update --init --recursive
 
 ### 3.1 场景一：只修改了主仓库代码
 
-如果您的修改**不涉及** `src/pro` 目录下的文件：
+如果您的修改**不涉及** `src/plugins_pro` 目录下的文件：
 
 ```bash
 git add .
@@ -57,14 +57,14 @@ git commit -m "fix: 修复了主程序的某个 bug"
 git push origin main
 ```
 
-### 3.2 场景二：修改了 `src/pro` 下的代码（重要！）
+### 3.2 场景二：修改了 `src/plugins_pro` 下的代码（重要！）
 
-由于 `src/pro` 是一个独立的 Git 仓库，您必须先提交它，再更新主仓库的引用指针。
+由于 `src/plugins_pro` 是一个独立的 Git 仓库，您必须先提交它，再更新主仓库的引用指针。
 
 **Step 1: 进入子模块提交代码**
 
 ```bash
-cd src/pro
+cd src/plugins_pro
 
 # 检出主分支（默认是游离状态 detached HEAD，开发前建议先 checkout）
 git checkout main
@@ -77,15 +77,15 @@ git push origin main
 ```
 
 **Step 2: 回到主仓库更新引用**
-子模块提交后，主项目会检测到 `src/pro` 的 commit id 发生了变化，需要提交这个变化。
+子模块提交后，主项目会检测到 `src/plugins_pro` 的 commit id 发生了变化，需要提交这个变化。
 
 ```bash
 cd ../..  # 回到 wemedia-baby 根目录
 
 git status
-# 您会看到：modified: src/pro (new commits)
+# 您会看到：modified: src/plugins_pro (new commits)
 
-git add src/pro
+git add src/plugins_pro
 git commit -m "chore: update pro submodule reference"
 git push origin main
 ```
@@ -94,7 +94,7 @@ git push origin main
 
 ## 4. 常见问题排查
 
-### Q1: `src/pro` 里面是空的？
+### Q1: `src/plugins_pro` 里面是空的？
 
 **A**: 说明子模块未更新。请在项目根目录运行：
 
@@ -102,7 +102,7 @@ git push origin main
 git submodule update --init --recursive
 ```
 
-### Q2: 在 `src/pro` 里 git push 失败？
+### Q2: 在 `src/plugins_pro` 里 git push 失败？
 
 **A**:
 
@@ -119,7 +119,7 @@ git submodule update --init --recursive
     git branch -d temp-branch
     ```
 
-### Q3: 团队成员拉取代码后 `src/pro` 报错或版本不对？
+### Q3: 团队成员拉取代码后 `src/plugins_pro` 报错或版本不对？
 
 **A**: 每次 `git pull` 主仓库后，如果别人更新了子模块指针，您需要同步更新子模块：
 

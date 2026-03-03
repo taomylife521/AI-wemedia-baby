@@ -93,7 +93,11 @@ class UndetectedBrowserManager:
                     # 检查是否包含本应用的数据目录路径
                     if data_root in cmdline:
                         logger.warning(f"[Process Guardian] 发现残留进程 PID={proc.info['pid']} ({name}), 正在清理...")
-                        proc.kill()
+                        try:
+                            proc.kill()
+                            proc.wait(timeout=1.0)
+                        except (psutil.NoSuchProcess, psutil.TimeoutExpired, psutil.AccessDenied):
+                            pass
                         cleaned_count += 1
                         
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
@@ -114,7 +118,8 @@ class UndetectedBrowserManager:
         account_id: str, 
         platform: str = "", 
         account_name: str = "",
-        fingerprint_config: Optional[Dict[str, Any]] = None  # 新增参数
+        fingerprint_config: Optional[Dict[str, Any]] = None,  # 新增参数
+        profile_folder_name: Optional[str] = None
     ):
         """初始化
         
@@ -123,13 +128,15 @@ class UndetectedBrowserManager:
             platform: 平台名称 (如 douyin)
             account_name: 账号名称 (用于生成文件夹名)
             fingerprint_config: 指纹配置,None则随机生成
+            profile_folder_name: 持久化使用的唯一 UUID 文件夹
         """
         self.account_id = account_id
         self.profile_manager = ProfileManager(
             account_id, 
             platform, 
             account_name,
-            fingerprint_config=fingerprint_config  # 传递指纹配置
+            fingerprint_config=fingerprint_config,  # 传递指纹配置
+            profile_folder_name=profile_folder_name
         )
         
         self.playwright: Optional[Playwright] = None
@@ -204,6 +211,7 @@ class UndetectedBrowserManager:
                 "permissions": ["geolocation", "notifications"],
                 "ignore_https_errors": True,
                 # "device_scale_factor": 1.0, # 移除，跟随系统
+                "ignore_default_args": ["--enable-automation"], # 关键：去掉自动测试软件的控制提示条
             }
             
             # 使用 launch_persistent_context
@@ -236,6 +244,7 @@ class UndetectedBrowserManager:
         """获取浏览器启动参数"""
         return [
             "--no-sandbox",
+            "--test-type", # 关键：屏蔽“不受支持的命令行标记(--no-sandbox)”的安全警告横幅
             "--disable-dev-shm-usage",
             "--disable-blink-features=AutomationControlled",
             "--ignore-certificate-errors",

@@ -57,13 +57,10 @@ class PlatformPublishFilterAsync(BaseFilter):
             
             # 执行发布（注意：PlatformAdapter可能是同步的，需要适配）
             # 这里假设适配器是同步的，如果需要异步，需要修改适配器
-            file_type = 'video'  # 从文件路径判断或从context获取
-            if context.file_path.endswith(('.mp4', '.avi', '.mov')):
-                file_type = 'video'
-            elif context.file_path.endswith(('.jpg', '.jpeg', '.png')):
-                file_type = 'image'
+            # 使用管道层面透传下来的精准发布类型进行判别
+            publish_type = getattr(context, 'publish_type', 'video')
             
-            if file_type == 'video':
+            if publish_type == 'video':
                 result = adapter.publish_video(
                     browser=browser,
                     cookie_data=None,  # Cookie已注入浏览器
@@ -72,7 +69,7 @@ class PlatformPublishFilterAsync(BaseFilter):
                     description=context.description,
                     tags=context.tags
                 )
-            elif file_type == 'image':
+            elif publish_type == 'image':
                 # 图片发布需要路径列表
                 image_paths = [context.file_path]  # 单个图片转为列表
                 result = adapter.publish_image(
@@ -84,7 +81,7 @@ class PlatformPublishFilterAsync(BaseFilter):
                     tags=context.tags
                 )
             else:
-                self.set_error(f"不支持的文件类型: {file_type}")
+                self.set_error(f"不支持的发布类型: {publish_type}")
                 return False
             
             if result.get('success'):

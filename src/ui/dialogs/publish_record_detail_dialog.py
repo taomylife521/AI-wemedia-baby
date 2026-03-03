@@ -48,7 +48,7 @@ class PublishRecordDetailDialog(Dialog if FLUENT_WIDGETS_AVAILABLE else QDialog)
             layout.addWidget(QLabel("详情功能需要Fluent Widgets支持", self))
             return
         
-        layout = QVBoxLayout(self.contentLayout())
+        layout = QVBoxLayout(self.viewLayout)
         layout.setSpacing(16)
         
         # 创建滚动区域

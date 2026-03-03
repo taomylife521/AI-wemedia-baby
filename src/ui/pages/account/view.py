@@ -145,6 +145,9 @@ class AccountPage(BasePage):
         self.operations_service.batch_delete_finished.connect(self._on_batch_deleted)
         self.operations_service.account_updated.connect(self._on_account_updated)
         
+        # 将浏览器操作引起的名字变化也直连到刷新
+        self.playwright_service.account_nickname_updated.connect(lambda _, __: self._load_accounts())
+        
         # 将按钮添加到操作组
         actions_group.addWidget(self.btn_add)
         actions_group.addWidget(self.btn_refresh)
@@ -220,10 +223,10 @@ class AccountPage(BasePage):
         dialog.setAttribute(Qt.WA_DeleteOnClose)
         
         # 连接对话框操作 -> 服务逻辑
-        dialog.close_browser_clicked.connect(lambda: asyncio.create_task(self.playwright_service.close_browser(account_id)))
+        dialog.close_browser_clicked.connect(lambda: self._run_bg_task(self.playwright_service.close_browser(account_id)))
         
         if is_new_account:
-            dialog.manual_save_clicked.connect(lambda: asyncio.create_task(self.playwright_service.handle_save_new_account(account_id, platform)))
+            dialog.manual_save_clicked.connect(lambda: self._run_bg_task(self.playwright_service.handle_save_new_account(account_id, platform)))
             # 存活检查逻辑：确保回调执行时对话框未被销毁
             def safe_update_status(_, msg):
                 if isValid(dialog) and dialog.isVisible():
@@ -236,7 +239,7 @@ class AccountPage(BasePage):
             self.playwright_service.status_updated.connect(safe_update_status)
             self.playwright_service.account_saved.connect(safe_accept)
         else:
-            dialog.manual_update_clicked.connect(lambda: asyncio.create_task(self.playwright_service.update_account_from_browser(account_id, platform_username, platform)))
+            dialog.manual_update_clicked.connect(lambda: self._run_bg_task(self.playwright_service.update_account_from_browser(account_id, platform_username, platform)))
             
         # 浏览器关闭信号 -> 关闭对话框
         def safe_close(closed_id):
@@ -337,8 +340,8 @@ class AccountPage(BasePage):
                     if hasattr(self, 'table_stack'):
                         self.table_stack.setCurrentIndex(0)
 
-            # 让主线程事件循环直接执行协程
-            asyncio.create_task(_do_fetch_and_update())
+            # 让主线程事件循环直接执行协程并保持强引用
+            self._run_bg_task(_do_fetch_and_update())
                 
         except Exception as e:
             logger.error(f"加载账号触发失败: {e}", exc_info=True)
@@ -347,6 +350,16 @@ class AccountPage(BasePage):
         """从活动worker列表移除"""
         if worker in self._active_workers:
             self._active_workers.remove(worker)
+
+    def _run_bg_task(self, coro):
+        """运行后台任务并保持强引用防止GC"""
+        import asyncio
+        task = asyncio.create_task(coro)
+        if not hasattr(self, '_bg_tasks'):
+            self._bg_tasks = set()
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+        return task
 
     def _filter_accounts(self):
         """根据搜索框和平台筛选过滤账号"""
@@ -519,7 +532,7 @@ class AccountPage(BasePage):
                          # 调用 Operations Service 添加账号 (它会处理信号和UI刷新)
                          self.operations_service.add_account(nickname, platform, cookies, profile_folder_name)
                          
-                    asyncio.create_task(self.playwright_service.open_new_account_window(
+                    self._run_bg_task(self.playwright_service.open_new_account_window(
                         platform=platform,
                         platform_url=platform_url,
                         on_save_callback=save_callback

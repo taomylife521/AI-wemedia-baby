@@ -3,12 +3,14 @@ import json
 import logging
 
 from src.plugins.core.interfaces.login_plugin import LoginPluginInterface, LoginResult
-from src.plugins.core.interfaces.login_plugin import LoginPluginInterface, LoginResult
 from .selectors import Selectors
 
 logger = logging.getLogger(__name__)
 
+
 class DouyinLoginPlugin(LoginPluginInterface):
+    """抖音登录插件。掉线原因由 LoginResult.error_message 提供，主程序已写入任务失败原因。"""
+
     @property
     def platform_id(self) -> str:
         return "douyin"

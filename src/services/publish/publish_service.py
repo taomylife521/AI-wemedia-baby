@@ -43,13 +43,16 @@ class PublishService:
         account_name: str,
         platform: str,
         file_path: str,
+        publish_type: str = "video",
         title: Optional[str] = None,
         description: Optional[str] = None,
         tags: Optional[str] = None,
         headless: bool = True,
         speed_rate: float = 1.0,
         pause_event: Any = None,
-        cover_type: Optional[str] = None
+        cover_type: Optional[str] = None,
+        cover_path: Optional[str] = None,
+        scheduled_publish_time: Optional[Any] = None,
     ) -> PublishResult:
         """发布单个文件（异步）
         
@@ -58,6 +61,7 @@ class PublishService:
             account_name: 账号名称
             platform: 平台名称
             file_path: 文件路径
+            publish_type: 发布类型 (video 或 image)
             title: 标题（可选）
             description: 描述（可选）
             tags: 标签（可选）
@@ -73,15 +77,22 @@ class PublishService:
             account_name=account_name,
             platform=platform,
             file_path=file_path,
+            publish_type=publish_type,
             title=title,
             description=description,
             tags=tags,
             headless=headless,
             speed_rate=speed_rate,
             pause_event=pause_event,
-            cover_type=cover_type
+            cover_type=cover_type,
+            cover_path=cover_path,
+            scheduled_publish_time=scheduled_publish_time,
         )
         
+        # 记录服务调用日志，明确输出发布类型是视频还是图文
+        type_str = "图文" if publish_type == "image" else "视频"
+        self.logger.info(f"执行 {platform} 平台的 {type_str}发布任务 (publish_type: {publish_type}) | 账号: {account_name} | 文件: {file_path}")
+
         # 发布开始事件
         from src.infrastructure.common.event.events import PublishStartedEvent
         await self.event_bus.publish(PublishStartedEvent(

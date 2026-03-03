@@ -14,6 +14,13 @@ from src.infrastructure.storage.retry import retry_on_locked
 logger = logging.getLogger(__name__)
 
 
+def _normalize_platform_username(value: str) -> str:
+    """平台昵称规范化：去除前导 @，避免与抖音等平台展示格式混入存储。"""
+    if not value or not isinstance(value, str):
+        return value or ""
+    return value.lstrip("@").strip() or value
+
+
 class AccountRepositoryAsync(BaseRepositoryAsync):
     """账号 Repository（异步版本）- 基于 Tortoise ORM
 
@@ -43,6 +50,7 @@ class AccountRepositoryAsync(BaseRepositoryAsync):
         Returns:
             新创建的账号ID
         """
+        platform_username = _normalize_platform_username(platform_username or "")
         try:
             account = await PlatformAccount.create(
                 user_id=user_id,
@@ -151,6 +159,7 @@ class AccountRepositoryAsync(BaseRepositoryAsync):
         Returns:
             是否成功
         """
+        platform_username = _normalize_platform_username(platform_username or "")
         try:
             updated = await PlatformAccount.filter(id=account_id).update(
                 platform_username=platform_username

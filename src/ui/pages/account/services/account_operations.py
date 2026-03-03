@@ -34,6 +34,9 @@ class AccountOperationsService(QObject):
         super().__init__(parent)
         self.account_manager = account_manager
         
+        # 保存异步任务的强引用，防止被GC静默回收
+        self._active_tasks = set()
+        
         # 订阅账号更新事件
         self._subscribe_events()
 
@@ -71,7 +74,9 @@ class AccountOperationsService(QObject):
             except Exception as e:
                 self._on_add_error(str(e))
                 
-        asyncio.create_task(run_add())
+        task = asyncio.create_task(run_add())
+        self._active_tasks.add(task)
+        task.add_done_callback(self._active_tasks.discard)
 
     def load_accounts(self):
         """加载账号列表"""
@@ -89,7 +94,9 @@ class AccountOperationsService(QObject):
                 logger.error(f"加载账号失败: {e}", exc_info=True)
                 self._on_load_error(str(e))
                 
-        asyncio.create_task(run_load())
+        task = asyncio.create_task(run_load())
+        self._active_tasks.add(task)
+        task.add_done_callback(self._active_tasks.discard)
 
     def delete_accounts(self, accounts: List[Dict], delete_cookie: bool = False):
         """批量删除账号"""
@@ -111,7 +118,9 @@ class AccountOperationsService(QObject):
                     logger.error(f"删除账号失败 {acc.get('username')}: {e}")
             self._on_delete_finished(success_count)
             
-        asyncio.create_task(run_delete())
+        task = asyncio.create_task(run_delete())
+        self._active_tasks.add(task)
+        task.add_done_callback(self._active_tasks.discard)
 
     def clear_cookie(self, account_id: int, platform_username: str, platform: str):
         """清理账号 Cookie"""
@@ -123,7 +132,9 @@ class AccountOperationsService(QObject):
                 logger.error(f"清理Cookie失败: {e}")
                 self.clear_cookie_error.emit(str(e))
 
-        asyncio.create_task(run_clear())
+        task = asyncio.create_task(run_clear())
+        self._active_tasks.add(task)
+        task.add_done_callback(self._active_tasks.discard)
 
     # --- 内部辅助方法 ---
 

@@ -30,7 +30,8 @@ class BrowserFactory:
         account_id: str, 
         platform: str = "", 
         platform_username: str = "",
-        fingerprint_config: Optional[dict] = None  # 新增参数,使用小写dict
+        fingerprint_config: Optional[dict] = None,  # 新增参数,使用小写dict
+        profile_folder_name: Optional[str] = None
     ) -> UndetectedBrowserManager:
         """获取浏览器服务实例
         
@@ -39,6 +40,7 @@ class BrowserFactory:
             platform: 平台名称 (如 douyin)
             platform_username: 平台用户名
             fingerprint_config: 指纹配置,None则随机生成
+            profile_folder_name: 持久化环境名称
         
         Returns:
             UndetectedBrowserManager 实例
@@ -56,7 +58,8 @@ class BrowserFactory:
             account_id, 
             platform, 
             platform_username,
-            fingerprint_config=fingerprint_config  # 传递指纹配置
+            fingerprint_config=fingerprint_config,  # 传递指纹配置
+            profile_folder_name=profile_folder_name
         )
     
     @staticmethod

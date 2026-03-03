@@ -234,11 +234,18 @@ class SettingsPage(BasePage):
         self.about_group = SettingCardGroup("关于", self.scroll_widget)
         
         # 检查更新
+        # 动态读取版本号，避免硬编码导致打包后版本不同步
+        try:
+            from src.version import __version__
+            version_str = __version__
+        except Exception:
+            version_str = "未知"
+        
         self.check_update_card = PushSettingCard(
             "检查更新",
             FluentIcon.INFO,
             "媒小宝",
-            "版本 1.0.0 (Build 20260102) © 2026 媒小宝团队",
+            f"版本 {version_str} © 2026 媒小宝团队",
             self.about_group
         )
         self.check_update_card.clicked.connect(self._on_check_update)

@@ -106,9 +106,6 @@ LOGIN_DETECTION_SCRIPT = """
                             if (text.indexOf('\n') !== -1) {
                                 text = text.split('\n')[0].trim();
                             }
-                            if (text.startsWith('@')) {
-                                text = text.substring(1);
-                            }
                             if (text.length > 0 && text.length < 30 && text.indexOf('登录') === -1) {
                                 username = text;
                                 break;

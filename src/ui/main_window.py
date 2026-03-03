@@ -11,6 +11,7 @@ from PySide6.QtCore import QTimer, QEvent
 import os
 import qasync
 from qasync import asyncSlot
+from PySide6.QtCore import Slot
 
 import logging
 
@@ -164,16 +165,20 @@ class MainWindow(FluentWindow):
                                       Q_ARG(str, message))
 
     # 定义为 Slot 供 invokeMethod 调用
+    @Slot(str, int)
     def _update_status_bar_impl(self, message: str, duration: int):
         if hasattr(self, 'statusBar') and callable(self.statusBar) and self.statusBar():
             self.statusBar().showMessage(message, duration)
-        if self.window():
-             StateToolTip(
-                 title="",
-                 content=message,
-                 parent=self.window()
-             ).show()
+        
+        # 用户要求移除顶部的蓝色消息状态弹窗功能
+        # if self.window():
+        #      StateToolTip(
+        #          title="",
+        #          content=message,
+        #          parent=self.window()
+        #      ).show()
 
+    @Slot(str)
     def _show_error_bar(self, message: str):
         InfoBar.error(
             title='错误',

@@ -23,6 +23,24 @@ os.environ.setdefault('QTWEBENGINE_DISABLE_SANDBOX', '0')
 os.environ.setdefault('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-logging --log-level=3')
 
 # ============================================================================
+# 防止 console=False 打包模式下因为 print 或向 sys.stdout 输出导致的闪退
+# ============================================================================
+class DummyStream:
+    def write(self, data): pass
+    def flush(self): pass
+    def fileno(self):
+        import io
+        raise io.UnsupportedOperation("fileno")
+    @property
+    def closed(self):
+        return False
+
+if sys.stdout is None:
+    sys.stdout = DummyStream()
+if sys.stderr is None:
+    sys.stderr = DummyStream()
+
+# ============================================================================
 # 全局异常钩子：静默处理 qfluentwidgets 的已知问题
 # ============================================================================
 # qfluentwidgets 的 FlowLayout 在窗口关闭时会触发 RuntimeError，
@@ -31,11 +49,18 @@ os.environ.setdefault('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-logging --log-lev
 _original_excepthook = sys.excepthook
 
 def _custom_excepthook(exc_type, exc_value, exc_tb):
-    """自定义异常钩子，静默处理 qfluentwidgets 的已知问题"""
-    # 检查是否是 qfluentwidgets FlowLayout 的 RuntimeError
+    """自定义异常钩子，静默处理 qfluentwidgets / asyncio 退出时的已知无害异常"""
+    # asyncio 退出时常见：取消、事件循环已关闭等
+    if exc_type is RuntimeError:
+        msg = str(exc_value)
+        if any(p in msg for p in (
+            'Event loop is closed',
+            'Event loop stopped',
+            'no running event loop',
+        )):
+            return
     if exc_type is RuntimeError:
         error_msg = str(exc_value)
-        # 检查是否是窗口关闭时的已知问题
         if any(pattern in error_msg for pattern in [
             'QWidgetItem',
             'already deleted',
@@ -43,18 +68,60 @@ def _custom_excepthook(exc_type, exc_value, exc_tb):
             'Python override of QObject::eventFilter',
             'Python override of QLayout::eventFilter',
         ]):
-            # 静默处理，不输出任何信息
             return
-    
-    # 其他异常使用原始处理器
+    try:
+        if exc_type.__name__ == 'CancelledError':
+            return
+    except Exception:
+        pass
+
+    # 针对未被屏蔽的严重错误，记录到独立日志并尝试弹窗
+    try:
+        import traceback
+        import datetime
+        from pathlib import Path
+        
+        # 写入应急崩溃日志
+        crash_dir = Path(os.environ.get('APPDATA', '')) / "wemedia_baby_data" / "logs"
+        crash_dir.mkdir(parents=True, exist_ok=True)
+        crash_file = crash_dir / "fatal_crash.log"
+        time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        err_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        with open(crash_file, "a", encoding="utf-8") as f:
+            f.write(f"\n[{time_str}] FATAL CRASH:\n{err_msg}\n")
+            
+        # 尝试弹框警告用户（如果 QApplication 已初始化）
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        if QApplication.instance():
+            QMessageBox.critical(
+                None, 
+                "应用发生严重错误", 
+                f"发生未捕获的严重异常，程序可能不稳定或即将退出。\n\n详情已记录到:\n{crash_file}\n\n错误信息:\n{str(exc_value)}"
+            )
+    except Exception:
+        pass
+
     _original_excepthook(exc_type, exc_value, exc_tb)
 
 sys.excepthook = _custom_excepthook
 
 
 class StderrFilter:
-    """stderr 过滤器，过滤掉已知的无害错误信息"""
+    """stderr 过滤器，过滤掉已知的无害错误信息（Qt/qfluentwidgets 关闭、asyncio 退出等）"""
     
+    # 一旦出现这些行，则开始过滤后续多行（直到空行或明显非错误行）
+    _block_start_patterns = (
+        'Exception ignored in atexit callback',
+        'Task was destroyed but it is pending',
+        'Task exception was never retrieved',
+        'Future exception was never retrieved',
+        'coroutine was never awaited',
+        'RuntimeWarning: coroutine ',
+        'Event loop stopped before Future completed',
+        'Event loop is closed',
+    )
+
     def __init__(self, original_stderr):
         self.original_stderr = original_stderr
         self.filtered_patterns = [
@@ -87,35 +154,51 @@ class StderrFilter:
             'RuntimeError: wrapped C/C++ object has been deleted',
             'if e.type() == QEvent.ToolTip:',
             'if e.type() == QEvent.Type.Wheel:',
-            'if obj is not self.parent():'
+            'if obj is not self.parent():',
+            # asyncio/qasync 退出时的无害报错
+            'Task was destroyed but it is pending',
+            'Task exception was never retrieved',
+            'Future exception was never retrieved',
+            'coroutine was never awaited',
+            'Event loop stopped before Future completed',
+            'Event loop is closed',
+            'asyncio.exceptions.CancelledError',
+            'qasync',
+            # Qt 退出时线程存储清理
+            'QThreadStorage:',
+            'destroyed before end of thread',
+            'Enable tracemalloc to get the object allocation traceback',
         ]
-        # 是否正在过滤多行错误块
         self._filtering_block = False
-    
+
     def write(self, text):
-        """过滤掉包含特定模式的行"""
-        if text and self.original_stderr:
-            # 检查是否包含需要过滤的模式
-            should_filter = any(pattern in text for pattern in self.filtered_patterns)
-            
-            # 如果检测到 atexit 错误块的开始，开始过滤整个块
-            if 'Exception ignored in atexit callback' in text:
-                self._filtering_block = True
+        """过滤掉包含特定模式的行，并对多行错误块整体过滤"""
+        if not text or not self.original_stderr:
+            return
+        # 检测多行错误块的开始（整块后续都过滤）
+        if any(p in text for p in self._block_start_patterns):
+            self._filtering_block = True
+            return
+        # 正在过滤块：Traceback/File/空行/缩进行 视为同一块继续过滤
+        if self._filtering_block:
+            is_traceback_line = (
+                text.startswith(' ') or text.startswith('\t') or
+                text.startswith('File ') or text.startswith('Traceback ') or
+                text.strip().startswith('File ') or
+                'Traceback (most recent' in text or '  File "' in text
+            )
+            if text.strip() == '' and not is_traceback_line:
+                self._filtering_block = False
+            elif is_traceback_line or any(p in text for p in self.filtered_patterns):
                 return
-            
-            # 如果正在过滤块且遇到空行或新的正常输出，停止过滤
-            if self._filtering_block:
-                if text.strip() == '' or (not should_filter and not text.startswith(' ') and not text.startswith('File') and not text.startswith('Traceback')):
-                    self._filtering_block = False
-                else:
-                    return  # 继续过滤块内容
-            
-            if not should_filter:
-                try:
-                    # 只输出不包含过滤模式的内容
-                    self.original_stderr.write(text)
-                except Exception:
-                    pass
+            else:
+                self._filtering_block = False
+        should_filter = any(pattern in text for pattern in self.filtered_patterns)
+        if not should_filter:
+            try:
+                self.original_stderr.write(text)
+            except Exception:
+                pass
     
     def flush(self):
         if self.original_stderr:
@@ -426,11 +509,30 @@ def main():
         loop = qasync.QEventLoop(app)
         asyncio.set_event_loop(loop)
         
+        # 捕获异步事件循环中未处理的异常
+        def custom_exception_handler(loop, context):
+            msg = context.get("exception", context["message"])
+            logging.error(f"[Asyncio 未处理异常]: {msg}")
+            
+            # 记录到崩溃日志
+            try:
+                import datetime
+                from pathlib import Path
+                crash_dir = Path(os.environ.get('APPDATA', '')) / "wemedia_baby_data" / "logs"
+                crash_dir.mkdir(parents=True, exist_ok=True)
+                with open(crash_dir / "fatal_crash.log", "a", encoding="utf-8") as f:
+                    time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    f.write(f"\n[{time_str}] ASYNC ERROR:\n{context}\n")
+            except Exception:
+                pass
+                
+        loop.set_exception_handler(custom_exception_handler)
+        
         async def run_app():
             """异步运行应用程序"""
             # 异步初始化服务
             if not await initialize_services_async():
-                print("服务初始化失败，程序退出")
+                logging.error("服务初始化失败，程序退出")
                 return 1
             
             # 创建主窗口
@@ -497,58 +599,116 @@ def main():
                 except asyncio.CancelledError:
                     pass
                 finally:
-                    # --- 增强的资源清理逻辑 ---
-                    logging.info("开始清理应用资源...")
-                    
+                    # --- 增强的资源清理逻辑（任一步骤异常也不阻塞退出，确保最终 os._exit 被执行）---
+                    # 注意：必须先做依赖事件循环的异步清理（浏览器关闭），再做会可能影响事件循环的步骤（配置/HTTP 等）
                     try:
-                        from src.infrastructure.common.di.service_locator import ServiceLocator
-                        sl = ServiceLocator()
-
-                        # 1. 停止批量任务执行器 (防止后台线程残留)
+                        logging.info("开始清理应用资源...")
+                        sl = None
                         try:
-                            from src.pro_features.batch.services.batch_task_manager_async import BatchTaskManagerAsync
-                            if sl.is_registered(BatchTaskManagerAsync):
-                                batch_manager = sl.get(BatchTaskManagerAsync)
-                                if hasattr(batch_manager, 'shutdown'):
-                                    logging.info("正在停止批量任务管理器...")
-                                    batch_manager.shutdown()
+                            from src.infrastructure.common.di.service_locator import ServiceLocator
+                            sl = ServiceLocator()
+                        except Exception as e:
+                            logging.warning(f"获取 ServiceLocator 失败: {e}")
+
+                        # 1. 先关闭所有 Playwright 浏览器（必须在事件循环仍可用时执行，否则只做 Process Guardian）
+                        try:
+                            from src.services.browser.playwright_service import PlaywrightBrowserService
+                            try:
+                                asyncio.get_running_loop()
+                                loop_ok = True
+                            except RuntimeError:
+                                loop_ok = False
+                            if loop_ok and sl and sl.is_registered(PlaywrightBrowserService):
+                                pw_service = sl.get(PlaywrightBrowserService)
+                                if hasattr(pw_service, "shutdown"):
+                                    logging.info("正在关闭所有浏览器实例...")
+                                    try:
+                                        await asyncio.wait_for(pw_service.shutdown(), timeout=8.0)
+                                        logging.info("所有浏览器实例已关闭")
+                                    except asyncio.TimeoutError:
+                                        logging.warning("浏览器服务 shutdown 超时，继续执行进程清理")
+                                    except RuntimeError as e:
+                                        if "no running event loop" in str(e):
+                                            logging.warning("事件循环已停止，跳过浏览器优雅关闭，将依赖 Process Guardian 清理")
+                                        else:
+                                            raise
+                            elif not loop_ok:
+                                logging.warning("事件循环已停止，跳过浏览器优雅关闭，将依赖 Process Guardian 清理")
+                        except Exception as e:
+                            if "no running event loop" not in str(e):
+                                logging.warning(f"关闭浏览器服务失败: {e}，将依赖 Process Guardian 清理")
+
+                        # 2. Process Guardian（同步，不依赖事件循环；两轮扫描中间短暂等待）
+                        try:
+                            from src.infrastructure.browser.browser_manager import UndetectedBrowserManager
+                            UndetectedBrowserManager.cleanup_all_processes()
+                            try:
+                                await asyncio.sleep(0.5)
+                            except RuntimeError:
+                                pass  # 事件循环已停则跳过等待
+                            UndetectedBrowserManager.cleanup_all_processes()
+                        except Exception as e:
+                            if "no running event loop" not in str(e):
+                                logging.warning(f"浏览器进程清理失败: {e}")
+
+                        if not sl:
+                            try:
+                                from src.infrastructure.common.di.service_locator import ServiceLocator
+                                sl = ServiceLocator()
+                            except Exception:
+                                sl = None
+
+                        # 3. 停止批量任务执行器
+                        try:
+                            if sl:
+                                from src.pro_features.batch.services.batch_task_manager_async import BatchTaskManagerAsync
+                                if sl.is_registered(BatchTaskManagerAsync):
+                                    batch_manager = sl.get(BatchTaskManagerAsync)
+                                    if hasattr(batch_manager, 'shutdown'):
+                                        logging.info("正在停止批量任务管理器...")
+                                        batch_manager.shutdown()
                         except Exception as e:
                             logging.warning(f"清理批量任务资源失败 (若模块未加载可忽略): {e}")
 
-                        # 2. 停止备份调度器
-                        # 注意：BackupManager 可能未被导入，需延迟导入
+                        # 4. 停止备份调度器
                         try:
                             from src.infrastructure.storage.backup_manager import BackupManager
-                            if sl.is_registered(BackupManager): 
+                            if sl and sl.is_registered(BackupManager):
                                 backup_manager = sl.get(BackupManager)
                                 backup_manager.stop()
                         except Exception as e:
-                            logging.error(f"停止备份管理器失败: {e}")
-                    
-                        # 3. 停止配置中心
+                            logging.warning(f"停止备份管理器失败: {e}")
+
+                        # 5. 停止配置中心
                         try:
+                            # 提前导入，防止下面判定 sl.is_registered 时因未导入抛出进而导致 except 块中也找不到名字
                             from src.infrastructure.common.config.config_center import ConfigCenter
-                            if sl.is_registered(ConfigCenter):
-                                config_center = sl.get(ConfigCenter)
-                                config_center.close()
+                            if sl and sl.is_registered(ConfigCenter):
+                                config_center_instance = sl.get(ConfigCenter)
+                                config_center_instance.close()
                                 logging.info("配置中心监听已停止")
+                        except ImportError as e:
+                            logging.debug(f"ConfigCenter 未导入，跳过清理: {e}")
                         except Exception as e:
                             logging.warning(f"停止配置中心失败: {e}")
 
-                        # 4. 关闭 HTTP 客户端
+                        # 6. 关闭 HTTP 客户端
                         try:
                             from src.infrastructure.network.http_client import AsyncHttpClient
-                            if sl.is_registered(AsyncHttpClient):
+                            if sl and sl.is_registered(AsyncHttpClient):
                                 client = sl.get(AsyncHttpClient)
                                 await client.close()
                                 logging.info("HTTP 客户端已关闭")
+                        except RuntimeError as e:
+                            if "no running event loop" in str(e):
+                                pass
+                            else:
+                                logging.warning(f"关闭 HTTP 客户端失败: {e}")
                         except Exception as e:
                             logging.warning(f"关闭 HTTP 客户端失败: {e}")
 
-                        # 5. 关闭 Tortoise ORM 连接（新架构）
+                        # 7. 关闭 Tortoise ORM 连接
                         try:
-                            # 避免 qasync 退出期剥夺事件循环导致的 'no running event loop'
-                            # 若没有循环，安全关闭协程对象以防止警告
                             coro = close_tortoise()
                             try:
                                 loop = asyncio.get_running_loop()
@@ -559,65 +719,40 @@ def main():
                                 else:
                                     logging.debug("Tortoise ORM 关闭交接后台")
                             except RuntimeError:
-                                # 捕获 no running event loop
                                 coro.close()
                         except Exception as e:
                             pass
 
                     except Exception as e:
-                         logging.error(f"资源清理过程发生错误: {e}")
+                        logging.error(f"资源清理过程发生错误: {e}")
 
-                    # 5. 确保浏览器进程清理 (通过 BrowserManager Process Guardian)
-                    try:
-                        from src.infrastructure.browser.browser_manager import UndetectedBrowserManager
-                        UndetectedBrowserManager.cleanup_all_processes()
+                        # 6. [核心] 清理所有剩余的 asyncio 任务
+                        try:
+                            current_loop = asyncio.get_running_loop()
+                        except RuntimeError:
+                            current_loop = None
+                        if current_loop:
+                            current_task = asyncio.current_task(current_loop)
+                            pending = [t for t in asyncio.all_tasks(current_loop) if t is not current_task]
+                            if pending:
+                                logging.info(f"发现 {len(pending)} 个未完成的后台任务，正在执行终止...")
+                                for task in pending:
+                                    task.cancel()
+                                try:
+                                    await asyncio.wait(pending, timeout=2.0)
+                                except RuntimeError as e:
+                                    if "no running event loop" not in str(e):
+                                        logging.warning(f"等待任务取消时出错: {e}")
+                                still_pending = [t for t in pending if not t.done()]
+                                if still_pending:
+                                    logging.warning(f"{len(still_pending)} 个后台任务在超时后仍未退出 (将被强行忽略)")
+                                else:
+                                    logging.info("所有后台任务已清理完毕")
+
+                        logging.info("资源清理流程结束，准备退出进程")
                     except Exception as e:
-                        logging.warning(f"浏览器进程清理失败: {e}")
-
-                # 5. [核心] 清理所有剩余的 asyncio 任务
-                try:
-                    # 获取当前运行的 event loop
-                    try:
-                        current_loop = asyncio.get_running_loop()
-                    except RuntimeError:
-                        logging.debug("已无运行中的事件循环，跳过后台任务清理")
-                        current_loop = None
-                    
-                    if current_loop:
-                        # 获取除当前任务外的所有任务
-                        current_task = asyncio.current_task(current_loop)
-                        pending = [t for t in asyncio.all_tasks(current_loop) if t is not current_task]
-                        
-                        if pending:
-                            logging.info(f"发现 {len(pending)} 个未完成的后台任务，正在执行终止...")
-                            
-                            # 全部发送取消请求
-                            for task in pending:
-                                task.cancel()
-                            
-                            # 等待任务取消完成 (设置超时，避免死等)
-                            # return_exceptions=True 确保即使某个任务报错也不会打断清理流程
-                            try:
-                                await asyncio.wait(pending, timeout=2.0)
-                            except RuntimeError as e:
-                                # 忽略 "no running event loop" 错误，这在退出阶段很常见
-                                if "no running event loop" not in str(e):
-                                    logging.warning(f"等待任务取消时出错: {e}")
-                            
-                            # 再次检查是否还有仍在运行的 (超时未取消)
-                            still_pending = [t for t in pending if not t.done()]
-                            if still_pending:
-                                logging.warning(f"{len(still_pending)} 个后台任务在超时后仍未退出 (将被强行忽略)")
-                            else:
-                                logging.info("所有后台任务已清理完毕")
-                            
-                except Exception as e:
-                    # 只有未被内层 RuntimeError 静默处理的预期外异常才在此抛出
-                    if "no running event loop" not in str(e):
-                        logging.error(f"清理后台任务时出错: {e}")
-
-                logging.info("资源清理流程结束，准备退出进程")
-                return 0
+                        logging.error(f"退出清理过程异常: {e}，仍将强制退出进程")
+                    return 0
             
             except asyncio.CancelledError:
                 # 正常捕获取消异常

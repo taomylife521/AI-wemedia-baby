@@ -10,6 +10,7 @@ from datetime import datetime
 from .base_repository_async import BaseRepositoryAsync
 from src.infrastructure.storage.orm_models.publish_record import PublishRecord
 from src.infrastructure.storage.retry import retry_on_locked
+from src.utils.date_utils import format_schedule_time_st_str
 
 logger = logging.getLogger(__name__)
 
@@ -224,10 +225,7 @@ class PublishRecordRepositoryAsync(BaseRepositoryAsync):
             "goods_info": record.goods_info,
             "anchor_info": record.anchor_info,
             "privacy_settings": record.privacy_settings,
-            "scheduled_publish_time": (
-                record.scheduled_publish_time.isoformat()
-                if record.scheduled_publish_time else None
-            ),
+            "scheduled_publish_time": format_schedule_time_st_str(record.scheduled_publish_time),
             "status": record.status,
             "error_message": record.error_message,
             "publish_url": record.publish_url,

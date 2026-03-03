@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 import logging
 import json
@@ -7,6 +8,19 @@ from playwright.async_api import Page
 from src.plugins.core.interfaces.publish_plugin import PublishPluginInterface, PublishResult, FormField
 
 logger = logging.getLogger(__name__)
+
+
+def _load_platform_config() -> Dict[str, Any]:
+    """从 config/platforms/kuaishou.json 读取平台配置（含 anti_risk）。"""
+    try:
+        project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
+        path = project_root / "config" / "platforms" / "kuaishou.json"
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data.get("anti_risk") if isinstance(data.get("anti_risk"), dict) else {}
+    except Exception:
+        pass
+    return {}
 
 class KuaishouPublishPlugin(PublishPluginInterface):
     @property
@@ -30,6 +44,7 @@ class KuaishouPublishPlugin(PublishPluginInterface):
     ) -> PublishResult:
         """执行快手自动发布流程"""
         page = context
+        anti_risk_config = _load_platform_config()
         try:
             logger.info(f"开始执行快手自动发布: {file_path}")
             
@@ -41,12 +56,22 @@ class KuaishouPublishPlugin(PublishPluginInterface):
             if "login" in page.url or "signin" in page.url:
                 return PublishResult(success=False, error_message="Cookie 已过期，请重新登录")
 
+            # 发布层防风控：进入发布页后、上传前操作延迟
+            try:
+                from src.infrastructure.anti_risk.delays import operation_delay
+                await operation_delay(page, metadata, anti_risk_config)
+            except Exception:
+                pass
+
             # 2. 上传视频
             logger.info("寻找快手上传按钮...")
             async with page.expect_file_chooser() as fc_info:
-                # 快手上传区域通常是一个大的 div 或者 input
                 upload_area = page.locator('input[type="file"], .upload-video, div[class*="upload"]').first
-                await upload_area.click()
+                try:
+                    from src.infrastructure.anti_risk.human_like import human_click
+                    await human_click(page, upload_area, metadata, anti_risk_config)
+                except Exception:
+                    await upload_area.click()
             
             file_chooser = await fc_info.value
             await file_chooser.set_files(file_path)
@@ -62,37 +87,64 @@ class KuaishouPublishPlugin(PublishPluginInterface):
                 # 即使没检测到文字，如果表单显示出来了也可以继续
                 logger.warning(f"上传状态检测超时，尝试继续执行表单填写: {e}")
 
+            # 步骤间间隔
+            try:
+                from src.infrastructure.anti_risk.delays import step_interval
+                await step_interval(page, metadata, anti_risk_config)
+            except Exception:
+                pass
+
             # 4. 填写表单
             title = metadata.get("title", "")
             description = metadata.get("description", "")
             tags = metadata.get("tags", [])
             
-            # 快手标题输入
-            title_input = page.locator('input[placeholder*="标题"], .title-input').first
-            if await title_input.count() > 0:
-                await title_input.fill(title)
+            # 操作前延迟 + 拟人输入标题
+            try:
+                from src.infrastructure.anti_risk.delays import operation_delay
+                await operation_delay(page, metadata, anti_risk_config)
+            except Exception:
+                pass
+            title_selector = 'input[placeholder*="标题"], .title-input'
+            title_input = page.locator(title_selector).first
+            if await title_input.count() > 0 and title:
+                try:
+                    from src.infrastructure.anti_risk.human_like import human_type_text
+                    await human_type_text(page, title_selector, title, metadata, anti_risk_config)
+                except Exception:
+                    await title_input.fill(title)
             
-            # 描述与话题
+            # 描述与话题（contenteditable 保留逐字 type）
             desc_box = page.locator('div[contenteditable="true"], .description-input').first
             if await desc_box.count() > 0:
-                await desc_box.click()
+                try:
+                    from src.infrastructure.anti_risk.human_like import human_click
+                    await human_click(page, desc_box, metadata, anti_risk_config)
+                except Exception:
+                    await desc_box.click()
                 await page.keyboard.press("Control+A")
                 await page.keyboard.press("Backspace")
-                
                 full_desc = description
                 if tags:
                     for tag in tags:
                         full_desc += f" #{tag}"
-                
                 await desc_box.type(full_desc, delay=30)
                 logger.info("已填写作品描述")
 
-            # 5. 点击发布
+            # 5. 点击发布（操作延迟 + 拟人点击）
+            try:
+                from src.infrastructure.anti_risk.delays import operation_delay
+                await operation_delay(page, metadata, anti_risk_config)
+            except Exception:
+                pass
             logger.info("执行最终发布...")
-            # 快手按钮通常叫“发布”或“确认发布”
             submit_btn = page.locator('button:has-text("发布"), button:has-text("确认发布")').first
             await submit_btn.wait_for(state="visible", timeout=30000)
-            await submit_btn.click()
+            try:
+                from src.infrastructure.anti_risk.human_like import human_click
+                await human_click(page, submit_btn, metadata, anti_risk_config)
+            except Exception:
+                await submit_btn.click()
 
             # 6. 结果确认
             try:

@@ -18,6 +18,7 @@ from qfluentwidgets import (
 FLUENT_WIDGETS_AVAILABLE = True
 
 from ..base_page import BasePage
+from src.utils.date_utils import format_schedule_time_st_str
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class PublishRecordsPage(BasePage):
         filter_layout.addSpacing(20)
         
         # 开始发布按钮
-        self.btn_start_publish = PrimaryPushButton(FluentIcon.PLAY, "开始", filter_card)
+        self.btn_start_publish = PrimaryPushButton(FluentIcon.PLAY, "发布", filter_card)
         self.btn_start_publish.clicked.connect(self._on_start_publish)
         filter_layout.addWidget(self.btn_start_publish)
         
@@ -98,10 +99,15 @@ class PublishRecordsPage(BasePage):
         self.combo_speed_setting.addItem("正常 (1.0x)")
         self.combo_speed_setting.addItem("慢速 (1.5x)")
         self.combo_speed_setting.addItem("极慢 (2.0x)")
+        # 额外倍率（仅追加，避免影响已保存的 speed_index）
+        self.combo_speed_setting.addItem("超慢 (3.0x)")
+        self.combo_speed_setting.addItem("调试 (5.0x)")
         # 使用 setItemData 设置 userData (qfluentwidgets addItem 第二参数是 icon)
         self.combo_speed_setting.setItemData(0, 1.0)
         self.combo_speed_setting.setItemData(1, 1.5)
         self.combo_speed_setting.setItemData(2, 2.0)
+        self.combo_speed_setting.setItemData(3, 3.0)
+        self.combo_speed_setting.setItemData(4, 5.0)
         self.combo_speed_setting.setCurrentIndex(0)
         self.combo_speed_setting.setFixedWidth(120)
         self.combo_speed_setting.setToolTip("调整发布操作的等待时间倍率，倍率越高越慢，越安全")
@@ -151,22 +157,23 @@ class PublishRecordsPage(BasePage):
         self.records_table.setBorderRadius(8)
         self.records_table.setWordWrap(False)
         self.records_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.records_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
             
         self.records_table.setColumnCount(8)
         self.records_table.setHorizontalHeaderLabels([
-            "平台", "平台昵称", "文件", "作品描述", "标签", "发布时间", "状态", "操作"
+            "平台", "平台昵称", "文件", "封面", "作品描述", "发布时间", "状态", "操作"
         ])
         
-        # 列宽设置
         # 列宽设置 (总宽约 1440px，适配宽屏)
-        self.records_table.setColumnWidth(0, 120) # 平台
-        self.records_table.setColumnWidth(1, 150) # 账号
+        self.records_table.setColumnWidth(0, 100) # 平台
+        self.records_table.setColumnWidth(1, 120) # 账号
         self.records_table.setColumnWidth(2, 200) # 文件
-        self.records_table.setColumnWidth(3, 350) # 描述
-        self.records_table.setColumnWidth(4, 200) # 标签
-        self.records_table.setColumnWidth(5, 180) # 发布时间
-        self.records_table.setColumnWidth(6, 120) # 状态
-        self.records_table.setColumnWidth(7, 120) # 操作
+        self.records_table.setColumnWidth(3, 80)  # 封面
+        self.records_table.setColumnWidth(4, 300) # 描述
+        self.records_table.setColumnWidth(5, 150) # 发布时间
+        self.records_table.setColumnWidth(6, 100) # 状态
+        self.records_table.setColumnWidth(7, 100) # 操作
+        self.records_table.verticalHeader().setDefaultSectionSize(60) # 增加行高以适应该封面
         
         self.records_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.records_table.customContextMenuRequested.connect(self._on_context_menu)
@@ -261,22 +268,30 @@ class PublishRecordsPage(BasePage):
             # 2. 文件
             fname = os.path.basename(r.get('file_path', ''))
             self.records_table.setItem(row, 2, QTableWidgetItem(fname))
+
+            # 3. 封面
+            # 简化为纯文本展示
+            cover_path = r.get('cover_path', '')
+            cover_text = "本地封面" if cover_path and os.path.exists(cover_path) else "首帧封面"
+            self.records_table.setItem(row, 3, QTableWidgetItem(cover_text))
             
-            # 3. 作品描述
-            desc = r.get('description', '') or r.get('title', '') or '(无描述)'
-            # 移除截断，显示完整内容 (表格会自动处理溢出)
-            self.records_table.setItem(row, 3, QTableWidgetItem(desc))
+            # 4. 作品描述 (标题 | 简介)
+            # 简化为纯文本展示
+            title_text = r.get('title', '').strip()
+            desc_text = r.get('description', '').strip()
+            if title_text and desc_text:
+                desc_plain = f'{title_text} | {desc_text}'
+            elif title_text:
+                desc_plain = title_text
+            elif desc_text:
+                desc_plain = desc_text
+            else:
+                desc_plain = '(无描述)'
+            self.records_table.setItem(row, 4, QTableWidgetItem(desc_plain))
             
-            # 4. 标签
-            tags = r.get('tags', '') or '-'
-            self.records_table.setItem(row, 4, QTableWidgetItem(tags))
-            
-            # 5. 发布时间 (区分定时和立即)
+            # 5. 发布时间 (区分定时和立即，统一 st_str 格式)
             scheduled_time = r.get('scheduled_publish_time')
-            time_display = "立即发布"
-            if scheduled_time:
-                # 简单格式化一下，如果是 ISO 格式
-                time_display = scheduled_time.replace('T', ' ')[:16] # yyyy-MM-dd HH:mm
+            time_display = format_schedule_time_st_str(scheduled_time) or "立即发布"
             self.records_table.setItem(row, 5, QTableWidgetItem(time_display))
             
             # 6. 状态
@@ -291,7 +306,6 @@ class PublishRecordsPage(BasePage):
             btn_view.setFixedSize(60, 26) # 缩小按钮尺寸
             btn_view.clicked.connect(lambda checked, rec=r: self._on_view_detail(rec))
             
-            # 创建一个容器 Widget 并设置布局来居中按钮
             widget_container = QWidget()
             layout_container = QHBoxLayout(widget_container)
             layout_container.setContentsMargins(0, 0, 0, 0)
@@ -300,7 +314,7 @@ class PublishRecordsPage(BasePage):
             self.records_table.setCellWidget(row, 7, widget_container)
             
             # --- 设置所有单元格居中 ---
-            for col in range(7): # 0~6 是文本单元格
+            for col in range(8): # 遍历所有列
                  item = self.records_table.item(row, col)
                  if item:
                      item.setTextAlignment(Qt.AlignCenter)
@@ -309,7 +323,7 @@ class PublishRecordsPage(BasePage):
         self._apply_filters()
 
     def _on_view_record_detail(self, row, col):
-        # 从该行第0列获取 UserRole 存储的 ID
+        # 从该行第0列获取 UserRole 存储的 ID (因为封面变到了第3列)
         rid_item = self.records_table.item(row, 0)
         if rid_item:
             try:

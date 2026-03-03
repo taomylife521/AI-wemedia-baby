@@ -54,7 +54,8 @@ class PublishExecutor:
         file_type: str = "video",
         headless: bool = True,
         speed_rate: float = 1.0,
-        pause_event: Any = None
+        pause_event: Any = None,
+        scheduled_publish_time: Optional[Any] = None
     ) -> PublishResult:
         """执行单个发布任务
         
@@ -107,8 +108,8 @@ class PublishExecutor:
                 
                 logger.info(f"发布任务: 账号={account_name}, 数据库ID={account_db_id}, 平台={platform}")
                 
-                # Step 3: 复用模块化方法打开浏览器（内部完成 查询→URL→启动→Cookie注入→导航）
-                browser_wrapper = await pw_service.open_browser_for_db_account(account_db_id)
+                # Step 3: 复用模块化方法打开浏览器（headless 与发布页「显示浏览器」勾选一致）
+                browser_wrapper = await pw_service.open_browser_for_db_account(account_db_id, headless=headless)
                 if not browser_wrapper or not browser_wrapper.context:
                     return PublishResult(success=False, error_message="未能正确拉起或获取浏览器组件实例")
                     
@@ -130,7 +131,8 @@ class PublishExecutor:
                     tags=tags or [],
                     headless=headless,
                     speed_rate=speed_rate,
-                    pause_event=pause_event
+                    pause_event=pause_event,
+                    scheduled_publish_time=scheduled_publish_time
                 )
                 
                 # 注入浏览器实例到上下文
@@ -207,7 +209,10 @@ class PublishExecutor:
                 "tags": context.tags,
                 "speed_rate": context.speed_rate,
                 "pause_event": context.pause_event,
-                "file_type": context.file_type
+                "file_type": context.file_type,
+                "cover_type": getattr(context, "cover_type", None),
+                "cover_path": getattr(context, "cover_path", None),
+                "scheduled_publish_time": getattr(context, "scheduled_publish_time", None),
             }
             
             result = await plugin.publish(
@@ -332,7 +337,8 @@ class PublishExecutor:
                 title=task.get('title', ''),
                 description=task.get('description', ''),
                 tags=task.get('tags'),
-                file_type=task.get('file_type', 'video')
+                file_type=task.get('file_type', 'video'),
+                scheduled_publish_time=task.get('scheduled_publish_time')
             )
             for task in tasks
         ]

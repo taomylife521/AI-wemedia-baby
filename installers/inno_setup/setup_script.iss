@@ -2,8 +2,16 @@
 ; 用于“迭代期”快速生成安装包
 ; 文档: docs/软件打包实施方案.md
 
+#ifndef BuildDir
+#define BuildDir "..\..\dist\fast\WeMediaBaby"
+#endif
+
+#ifndef OutputPrefix
+#define OutputPrefix "Fast"
+#endif
+
 #define MyAppName "WeMediaBaby"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "MediaBaby Team"
 #define MyAppURL "https://github.com/your-repo/wemedia-baby"
 #define MyAppExeName "WeMediaBaby.exe"
@@ -23,7 +31,7 @@ DisableProgramGroupPage=yes
 ; 使用非管理员安装模式（安装到当前用户目录，无需管理员权限）
 PrivilegesRequired=lowest
 OutputDir=..\..\dist\installers
-OutputBaseFilename=WeMediaBaby_Setup_Fast_v{#MyAppVersion}
+OutputBaseFilename=WeMediaBaby_Setup_{#OutputPrefix}_v{#MyAppVersion}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -33,13 +41,12 @@ WizardStyle=modern
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-; 这里的 Source 路径是相对于 .iss 文件的
-; 确保先运行了 .\scripts\build_fast.ps1
-Source: "..\..\dist\fast\WeMediaBaby\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\dist\fast\WeMediaBaby\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; 动态获取 Source
+Source: "{#BuildDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]

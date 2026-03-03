@@ -5,7 +5,7 @@
 """
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Any
 import re
 
 
@@ -13,6 +13,8 @@ import re
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 DATE_FORMAT = "%Y-%m-%d"
 TIME_FORMAT = "%H:%M:%S"
+# 定时发布时间显示/输入格式：YYYY-MM-DD HH:mm（无秒、无时区）
+SCHEDULE_TIME_ST_FORMAT = "%Y-%m-%d %H:%M"
 
 
 def format_datetime(dt: datetime, format_str: str = DATETIME_FORMAT) -> str:
@@ -143,6 +145,39 @@ def is_date_expired(date_str: str, format_str: str = DATE_FORMAT) -> bool:
         return target_date < today
     except ValueError:
         return True  # 格式错误视为已过期
+
+
+def format_schedule_time_st_str(value: Optional[Any]) -> Optional[str]:
+    """将定时发布时间统一格式化为 st_str：YYYY-MM-DD HH:mm（无秒、无时区）。
+
+    用于界面显示、日志、以及传给发布插件的时间输入框。
+    接受 datetime、ISO 字符串或已是 "YYYY-MM-DD HH:mm" 的字符串。
+
+    Args:
+        value: None、datetime 或字符串（如 ISO 或 "YYYY-MM-DD HH:mm"）
+
+    Returns:
+        格式化后的 "YYYY-MM-DD HH:mm"，若 value 为 None 则返回 None
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.strftime(SCHEDULE_TIME_ST_FORMAT)
+    s = str(value).strip()
+    if not s:
+        return None
+    s = s.replace("T", " ")
+    if "+" in s:
+        s = s.split("+")[0].strip()
+    if s.endswith("Z"):
+        s = s[:-1].strip()
+    parts = s.split(" ", 1)
+    if len(parts) == 2 and ":" in parts[1]:
+        time_part = parts[1]
+        if time_part.count(":") == 2:
+            time_part = time_part.rsplit(":", 1)[0]
+        s = f"{parts[0]} {time_part}"
+    return s[:16] if len(s) >= 16 else s
 
 
 def get_datetime_diff_seconds(dt1: datetime, dt2: datetime) -> int:

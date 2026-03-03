@@ -42,7 +42,8 @@ class PublishExecutionFilter(BaseFilter):
                 tags=tags_list,
                 headless=context.headless,
                 speed_rate=context.speed_rate,
-                pause_event=context.pause_event
+                pause_event=context.pause_event,
+                scheduled_publish_time=context.scheduled_publish_time
                 # file_type 默认为 video，暂不支持图片
             )
             

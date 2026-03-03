@@ -35,7 +35,7 @@ class ProfileManager:
     3. 确保每个账号有独立的持久化目录
     """
     
-    def __init__(self, account_id: str, platform: str = "", account_name: str = "", fingerprint_config: Optional[dict] = None):
+    def __init__(self, account_id: str, platform: str = "", account_name: str = "", fingerprint_config: Optional[dict] = None, profile_folder_name: Optional[str] = None):
         """初始化
         
         Args:
@@ -43,8 +43,10 @@ class ProfileManager:
             platform: 平台名称 (如 douyin)
             account_name: 平台用户名 (唯一标识，用于生成文件夹名)
             fingerprint_config: 指纹配置,None则随机生成
+            profile_folder_name: 持久化的唯一指纹文件夹名 (如 UUID)，避免因改名建新文件夹
         """
         self.account_id = account_id
+        self.profile_folder_name = profile_folder_name
         
         # 兼容旧代码：如果未提供 platform/account_name，尝试从 account_id 推断或回退
         # 但为了强制迁移，建议调用方必须提供 (暂时保留回退逻辑)
@@ -53,9 +55,9 @@ class ProfileManager:
             from src.infrastructure.common.path_manager import PathManager
             self.base_dir = PathManager.get_app_data_dir() / 'data' / 'browsers' / account_id
         else:
-            # 新逻辑: 使用 PathManager 获取统一的账号根目录
+            # 新逻辑: 使用 PathManager 获取统一的账号根目录，把 profile_folder_name 抛过去
             from src.infrastructure.common.path_manager import PathManager
-            account_root = PathManager.get_platform_account_dir(platform, account_name)
+            account_root = PathManager.get_platform_account_dir(platform, account_name, profile_folder_name)
             self.base_dir = account_root / 'browser'
         
         # 确保目录存在

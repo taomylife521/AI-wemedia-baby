@@ -19,7 +19,8 @@ class PublishContext:
     account_name: str
     platform: str
     file_path: str
-    file_type: str = "video" # video or image
+    file_type: str = "video" # video or image (旧字段保留供兼容)
+    publish_type: str = "video" # 新增：明确的发布大类（video/image）
     title: Optional[str] = None
     description: Optional[str] = None
     tags: Optional[str] = None
@@ -28,7 +29,9 @@ class PublishContext:
     speed_rate: float = 1.0  # 发布速度倍率 (1.0=正常, >1.0=慢速)
     pause_event: Any = None  # 暂停控制事件 (asyncio.Event)
     error_message: Optional[str] = None
-    cover_type: Optional[str] = None  # 封面类型: "first_frame", "custom", None
+    cover_type: Optional[str] = None  # 封面类型: "first_frame", "custom", "ai"
+    cover_path: Optional[str] = None  # 本地封面图片路径（custom 时使用）
+    scheduled_publish_time: Optional[Any] = None  # 定时发布时间 (datetime 或 str)
 
 
 @dataclass
@@ -38,13 +41,16 @@ class PublishRequest:
     account_name: str
     platform: str
     file_path: str
+    publish_type: str = "video" # 新增：明确的发布大类（video/image）
     title: Optional[str] = None
     description: Optional[str] = None
     tags: Optional[str] = None
     headless: bool = True  # 是否无头模式
     speed_rate: float = 1.0  # 发布速度倍率
     pause_event: Any = None  # 暂停控制事件 (asyncio.Event)
-    cover_type: Optional[str] = None  # 封面类型: "first_frame", "custom", None
+    cover_type: Optional[str] = None  # 封面类型: "first_frame", "custom", "ai"
+    cover_path: Optional[str] = None  # 本地封面图片路径（custom 时使用）
+    scheduled_publish_time: Optional[Any] = None  # 定时发布时间
 
 
 @dataclass

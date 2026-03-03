@@ -93,13 +93,16 @@ class PublishPipeline:
                 account_name=request.account_name,
                 platform=request.platform,
                 file_path=request.file_path,
+                publish_type=getattr(request, 'publish_type', 'video'),
                 title=request.title,
                 description=request.description,
                 tags=request.tags,
                 headless=request.headless,
                 speed_rate=request.speed_rate,
                 pause_event=request.pause_event,
-                cover_type=request.cover_type
+                cover_type=getattr(request, 'cover_type', None),
+                cover_path=getattr(request, 'cover_path', None),
+                scheduled_publish_time=getattr(request, 'scheduled_publish_time', None),
             )
             
             try:
@@ -223,7 +226,8 @@ class PublishPipeline:
                     description=record.get('description'),
                     tags=record.get('tags', '').split(',') if record.get('tags') else [],
                     headless=True,  # 恢复任务默认使用无头模式
-                    speed_rate=1.0
+                    speed_rate=1.0,
+                    scheduled_publish_time=record.get('scheduled_publish_time')
                 )
                 requests.append(request)
             

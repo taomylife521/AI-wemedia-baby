@@ -67,8 +67,10 @@ class PlatformPublishFilter(Filter):
                 self._error_message = f"不支持的平台: {context.platform}"
                 return False
             
+            publish_type = getattr(context, 'publish_type', 'video')
+
             # 执行发布
-            if context.file_type == 'video':
+            if publish_type == 'video':
                 result = adapter.publish_video(
                     browser=context.browser,
                     cookie_data=context.cookie_data,
@@ -77,7 +79,7 @@ class PlatformPublishFilter(Filter):
                     description=context.description,
                     tags=context.tags
                 )
-            elif context.file_type == 'image':
+            elif publish_type == 'image':
                 # 图片发布需要路径列表
                 image_paths = [context.file_path]  # 单个图片转为列表
                 result = adapter.publish_image(
@@ -89,7 +91,7 @@ class PlatformPublishFilter(Filter):
                     tags=context.tags
                 )
             else:
-                self._error_message = f"不支持的文件类型: {context.file_type}"
+                self._error_message = f"不支持的发布类型: {publish_type}"
                 return False
             
             if result.get('success'):

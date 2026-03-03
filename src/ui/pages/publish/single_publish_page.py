@@ -4,17 +4,18 @@
 功能：抖音单视频发布功能 - Community Edition
 """
 
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QFileDialog, QMessageBox, QComboBox, QTextEdit, QLineEdit,
     QFrame, QScrollArea, QButtonGroup
 )
-from PySide6.QtGui import QPixmap
-from PySide6.QtCore import Qt, Signal, QDate, QTime, QDateTime, QEasingCurve, QPropertyAnimation
+from PySide6.QtGui import QPixmap, QTextCharFormat, QTextCursor, QKeyEvent
+from PySide6.QtCore import Qt, Signal, QDate, QTime, QDateTime, QEasingCurve, QPropertyAnimation, QTimer, QEvent
 import logging
 import os
 import asyncio
+import re
 
 from qfluentwidgets import (
     CardWidget, SubtitleLabel, BodyLabel, PrimaryPushButton, 
@@ -29,6 +30,33 @@ from ..base_page import BasePage
 from qasync import asyncSlot
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_topic_ranges(text: str) -> List[Tuple[int, int]]:
+    """解析文本中已确认的话题区间：仅当 #关键词 后紧跟空格（或其它空白）时识别，与抖音一致。返回 [(start, end), ...]。"""
+    if not text:
+        return []
+    ranges = []
+    for m in re.finditer(r"#\S+", text):
+        end = m.end()
+        # 必须后跟空白才视为已确认话题，未按空格的 #xxx 不识别
+        if end < len(text) and text[end].isspace():
+            ranges.append((m.start(), end))
+    return ranges
+
+
+def _parse_topic_list(text: str) -> List[str]:
+    """从文本中解析出已确认的话题关键词列表（去 # 号）。与 _parse_topic_ranges 规则一致。"""
+    if not text:
+        return []
+    tags = []
+    for m in re.finditer(r"#\S+", text):
+        end = m.end()
+        if end < len(text) and text[end].isspace():
+            tag = m.group(0).lstrip("#")
+            if tag and tag not in tags:
+                tags.append(tag)
+    return tags
 
 
 class SinglePublishPage(BasePage):
@@ -111,21 +139,21 @@ class SinglePublishPage(BasePage):
         left_vbox = QVBoxLayout()
         left_vbox.setSpacing(16)
         
-        # 顶部并排卡片布局 (账号 + 视频)
+        # 顶部核心配置卡片 (账号 + 视频 + 封面)
         top_config_hbox = QHBoxLayout()
         top_config_hbox.setSpacing(16)
         
-        account_card = self._create_account_card()
-        video_card = self._create_video_card()
+        core_config_card = self._create_core_config_card()
         
-        top_config_hbox.addWidget(account_card, 3) # 缩小账号区权重 (由4降为3)
-        top_config_hbox.addWidget(video_card, 6)   # 增加视频区权重 (由5升为6)
+        top_config_hbox.addWidget(core_config_card)
         
         left_vbox.addLayout(top_config_hbox)
         
         description_card = self._create_description_card()
+        extended_info_card = self._create_extended_info_card()
         settings_card = self._create_settings_card()
         left_vbox.addWidget(description_card)
+        left_vbox.addWidget(extended_info_card)
         left_vbox.addWidget(settings_card)
         
         main_hbox.addLayout(left_vbox, 3) # 操作区比重
@@ -181,48 +209,34 @@ class SinglePublishPage(BasePage):
         
         return card
     
-    def _create_account_card(self) -> QWidget:
-        """创建专门的账号选择卡片"""
-        card = CardWidget(self)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
-        layout.setAlignment(Qt.AlignTop)
-        
-        btn_row = QHBoxLayout()
-        
-        self.btn_select_account = PrimaryPushButton(FluentIcon.PEOPLE, "选择发布账号", card)
-        self.account_label = BodyLabel("未选择账号", card)
-            
-        self.account_label.setStyleSheet("color: red; font-weight: bold; margin-top: 4px;") # 移除 margin-left，改为顶部间距
-        self.btn_select_account.clicked.connect(self._on_select_account)
-        self.btn_select_account.setFixedWidth(160)
-        
-        # 按钮单独一行
-        btn_row.addWidget(self.btn_select_account)
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
-        
-        # 信息显示在下方
-        layout.addWidget(self.account_label)
-        
-        return card
-
-    def _create_video_card(self) -> QWidget:
-        """创建专门的视频文件卡片"""
+    def _create_core_config_card(self) -> QWidget:
+        """创建核心配置卡片 (包含账号、视频和封面)"""
         card = CardWidget(self)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(16)
         
-        # --- 第一行: 视频文件选择 ---
+        # --- 第一行: 账号选择 ---
+        account_row = QHBoxLayout()
+        self.btn_select_account = PrimaryPushButton(FluentIcon.PEOPLE, "选择发布账号", card)
+        self.account_label = BodyLabel("未选择账号", card)
+            
+        self.account_label.setStyleSheet("color: red; font-weight: bold; margin-left: 10px;") 
+        self.btn_select_account.clicked.connect(self._on_select_account)
+        self.btn_select_account.setFixedWidth(140)
+        
+        account_row.addWidget(self.btn_select_account)
+        account_row.addWidget(self.account_label, 1) # 由其占满剩余空间并触发换行
+        layout.addLayout(account_row)
+
+        # --- 第二行: 视频文件选择 ---
         video_row = QHBoxLayout()
         self.btn_add_video = PrimaryPushButton(FluentIcon.VIDEO, "添加视频", card)
         self.file_info_label = BodyLabel("暂未选择视频", card)
         
         self.file_info_label.setWordWrap(True)
         self.btn_add_video.clicked.connect(self._on_browse_file)
-        self.btn_add_video.setFixedWidth(120)
+        self.btn_add_video.setFixedWidth(140)
         self.file_info_label.setStyleSheet("color: #888; margin-left: 10px;")
         
         video_row.addWidget(self.btn_add_video)
@@ -232,38 +246,53 @@ class SinglePublishPage(BasePage):
         # --- 第二行: 封面设置 ---
         cover_row = QHBoxLayout()
         cover_title = BodyLabel("视频封面", card)
-        self.check_default_first_frame = CheckBox("首帧", card)
-        self.cover_path_edit = LineEdit(card)
+        
+        # 互斥单选按钮
+        self.radio_first_frame = RadioButton("首帧封面", card)
+        self.radio_local_cover = RadioButton("本地封面", card)
+        
+        self.radio_first_frame.setChecked(True)
+        # 移除固定宽度，防止文字遮挡，设置最小宽度保证点击区域
+        self.radio_first_frame.setMinimumWidth(90)
+        self.radio_local_cover.setMinimumWidth(90)
+        
+        # 将单选按钮加入互斥组
+        self.cover_type_group = QButtonGroup(self)
+        self.cover_type_group.addButton(self.radio_first_frame)
+        self.cover_type_group.addButton(self.radio_local_cover)
+        
+        self.cover_path_label = BodyLabel("未选择本地封面", card)
+        self.cover_path_label.setStyleSheet("color: #888; margin-left: 10px;")
+        self.cover_path_label.setWordWrap(True)
+        self.selected_cover_path = ""
+        
         self.btn_browse_cover = PushButton(FluentIcon.PHOTO, "选择", card)
             
         cover_title.setFixedWidth(60)
-        self.check_default_first_frame.setChecked(True)
-        self.check_default_first_frame.setFixedWidth(60)
         
         # AI封面按钮
         self.btn_ai_cover = PushButton(FluentIcon.BRUSH, "AI封面", card)
         self.btn_ai_cover.setFixedWidth(100)
         self.btn_ai_cover.clicked.connect(self._on_ai_cover_clicked)
         
-        self.cover_path_edit.setPlaceholderText("默认自动截取...")
-        self.cover_path_edit.setReadOnly(True)
-        self.cover_path_edit.setFixedWidth(160)
-        
-        # 初始状态
-        self.cover_path_edit.setEnabled(False)
+        # 初始状态：选中首帧封面时禁用本地相关的按钮
         self.btn_browse_cover.setEnabled(False)
-        self.btn_ai_cover.setEnabled(True) # AI封面始终可用，或者根据逻辑调整
+        self.btn_ai_cover.setEnabled(False) 
         
         # 绑定逻辑
-        self.check_default_first_frame.stateChanged.connect(self._on_first_frame_toggled)
+        self.radio_first_frame.toggled.connect(self._on_cover_type_toggled)
+        self.radio_local_cover.toggled.connect(self._on_cover_type_toggled)
         self.btn_browse_cover.clicked.connect(self._on_browse_cover)
         
+        cover_row.setSpacing(12) # 增加内部控件间距
         cover_row.addWidget(cover_title)
-        cover_row.addWidget(self.check_default_first_frame)
-        cover_row.addWidget(self.btn_ai_cover) # 添加AI封面按钮
-        cover_row.addWidget(self.cover_path_edit)
+        cover_row.addWidget(self.radio_first_frame)
+        cover_row.addWidget(self.radio_local_cover)
+        cover_row.addSpacing(10) # 进一步拉开距离
         cover_row.addWidget(self.btn_browse_cover)
-        cover_row.addStretch()
+        cover_row.addWidget(self.btn_ai_cover) # 添加AI封面按钮
+        cover_row.addWidget(self.cover_path_label, 1) # 让文本标签自动拉伸填满剩余空间并放在最后
+        # 移除了末尾的 addStretch()，改为利用输入框自适应延展
         layout.addLayout(cover_row)
         
         return card
@@ -317,15 +346,18 @@ class SinglePublishPage(BasePage):
         line.setStyleSheet("background-color: #f2f2f2; max-height: 1px; margin: 4px 0;")
         container_layout.addWidget(line)
         
-        # (3) 描述文本区
-        self.desc_edit = TextEdit(entry_container)
+        # (3) 描述文本区（QTextEdit 支持富文本，用于 #关键词+空格 话题高亮）
+        self.desc_edit = QTextEdit(entry_container)
         self.desc_edit.setPlaceholderText("添加作品简介")
+        self.desc_edit.setAcceptRichText(True)
         self.desc_edit.setStyleSheet("border: none; background: transparent; font-size: 14px; padding: 10px 0;")
         self.desc_edit.setMinimumHeight(80)
         self.desc_edit.setMaximumHeight(160)
+        self._last_desc_plain: str = ""
+        self.desc_edit.installEventFilter(self)
         container_layout.addWidget(self.desc_edit)
         
-        # (4) 底部工具栏: 话题、@常用词 + 字数统计
+        # (4) 底部工具栏: 话题、@常用词 + 话题数 + 字数统计
         toolbar_hbox = QHBoxLayout()
         toolbar_hbox.setContentsMargins(0, 4, 0, 0)
         
@@ -341,15 +373,20 @@ class SinglePublishPage(BasePage):
         self.btn_topic.clicked.connect(self._on_add_topic_clicked)
         self.btn_mention.clicked.connect(self._on_add_mention_clicked)
         
+        self.topic_count_label = QLabel("已设置 0 个话题", entry_container)
+        self.topic_count_label.setStyleSheet("color: #888; font-size: 12px; margin-left: 8px;")
+        
         total_count_label = QLabel("0 / 1000", entry_container)
         total_count_label.setStyleSheet("color: #ccc; font-size: 12px;")
         
-        # 实时统计字数
+        # 实时统计字数 + 话题识别与高亮
         self.title_edit.textChanged.connect(lambda text: title_count_label.setText(f"{len(text)}/30"))
-        self.desc_edit.textChanged.connect(lambda: total_count_label.setText(f"{len(self.desc_edit.toPlainText())} / 1000"))
+        self.desc_edit.textChanged.connect(self._on_desc_text_changed)
+        self._desc_total_count_label = total_count_label
         
         toolbar_hbox.addWidget(self.btn_topic)
         toolbar_hbox.addWidget(self.btn_mention)
+        toolbar_hbox.addWidget(self.topic_count_label)
         toolbar_hbox.addStretch()
         toolbar_hbox.addWidget(total_count_label)
         container_layout.addLayout(toolbar_hbox)
@@ -357,8 +394,8 @@ class SinglePublishPage(BasePage):
         layout.addWidget(entry_container)
         return card
 
-    def _create_settings_card(self) -> QWidget:
-        """创建更多设置卡片"""
+    def _create_extended_info_card(self) -> QWidget:
+        """创建扩展信息卡片"""
         card = CardWidget(self)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -370,8 +407,8 @@ class SinglePublishPage(BasePage):
         if not hasattr(self, 'tag_values'):
             self.tag_values = {}
         
-        # 标题 (更多设置)
-        title = SubtitleLabel("更多设置", card)
+        # 标题 (扩展信息)
+        title = SubtitleLabel("扩展信息", card)
         layout.addWidget(title)
         
         # --- 添加标签 (下拉选择 + 输入框) ---
@@ -401,6 +438,21 @@ class SinglePublishPage(BasePage):
         add_tags_row.addWidget(self.tag_type_combo)
         add_tags_row.addWidget(self.tag_content_edit)
         layout.addLayout(add_tags_row)
+        
+        return card
+
+    def _create_settings_card(self) -> QWidget:
+        """创建发布设置卡片"""
+        card = CardWidget(self)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
+        
+        LABEL_WIDTH = 100 # 左侧标签统一宽度
+        
+        # 标题 (发布设置)
+        title = SubtitleLabel("发布设置", card)
+        layout.addWidget(title)
 
         # --- 5. 权限设置 ---
         perm_row = QHBoxLayout()
@@ -447,7 +499,49 @@ class SinglePublishPage(BasePage):
         """插入艾特符号"""
         self.desc_edit.insertPlainText("@")
         self.desc_edit.setFocus()
-        
+
+    def _on_desc_text_changed(self):
+        """作品简介内容变化：更新字数、解析 #关键词+空格 为话题并高亮，更新话题数。"""
+        plain = self.desc_edit.toPlainText()
+        if hasattr(self, "_desc_total_count_label") and self._desc_total_count_label:
+            self._desc_total_count_label.setText(f"{len(plain)} / 1000")
+        if plain == getattr(self, "_last_desc_plain", None):
+            return
+        ranges = _parse_topic_ranges(plain)
+        topic_count = len(ranges)
+        if hasattr(self, "topic_count_label") and self.topic_count_label:
+            self.topic_count_label.setText(f"已设置 {topic_count} 个话题")
+        self.desc_edit.blockSignals(True)
+        try:
+            cursor = self.desc_edit.textCursor()
+            pos = cursor.position()
+            cursor.movePosition(QTextCursor.Start)
+            cursor.movePosition(QTextCursor.End, QTextCursor.MoveMode.KeepAnchor)
+            default_fmt = QTextCharFormat()
+            cursor.setCharFormat(default_fmt)
+            topic_fmt = QTextCharFormat()
+            topic_fmt.setForeground(Qt.GlobalColor.blue)
+            topic_fmt.setBackground(Qt.GlobalColor.lightGray)
+            for start, end in ranges:
+                cursor.setPosition(start)
+                cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+                cursor.mergeCharFormat(topic_fmt)
+            cursor.setPosition(pos)
+            self.desc_edit.setTextCursor(cursor)
+        finally:
+            self.desc_edit.blockSignals(False)
+        self._last_desc_plain = plain
+
+    def eventFilter(self, obj, event):
+        """监听作品简介输入框：按空格且光标前以 #xxx 结尾时，插入空格后触发展示层「确认话题」更新（与抖音一致）。"""
+        if obj is self.desc_edit and event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Space:
+            text = self.desc_edit.toPlainText()
+            pos = self.desc_edit.textCursor().position()
+            text_before = text[:pos]
+            if re.search(r"#\S+$", text_before):
+                QTimer.singleShot(0, self._on_desc_text_changed)
+        return super().eventFilter(obj, event)
+
     def _on_tag_type_changed(self, text):
         """标签类型切换"""
         # 切换时，输入框显示对应类型的值
@@ -641,20 +735,18 @@ class SinglePublishPage(BasePage):
     @asyncSlot()
     async def _on_select_account(self):
         """选择账号按钮点击槽函数"""
-        logger.info(f"点击选择账号按钮, available_accounts count: {len(getattr(self, 'available_accounts', []))}")
+        logger.info("点击选择账号按钮，为保证昵称与状态均同步最新，强制从数据库重新加载账号列表...")
+        await self._load_accounts()
+        
         if not hasattr(self, 'available_accounts') or not self.available_accounts:
-            logger.warning("账号列表为空，尝试重新加载...")
-            # 账号为空时先尝试加载，加载完再显示弹窗
-            await self._load_accounts()
-            if not self.available_accounts:
-                InfoBar.warning(
-                    title="暂无账号",
-                    content="请先在账号管理页面添加并登录账号",
-                    parent=self,
-                    position=InfoBarPosition.TOP,
-                    duration=3000
-                )
-                return
+            InfoBar.warning(
+                title="暂无账号",
+                content="请先在账号管理页面添加并登录账号或确保系统已有最新同步数据",
+                parent=self,
+                position=InfoBarPosition.TOP,
+                duration=3000
+            )
+            return
             
         # 异步显示选择弹窗
         logger.info("准备显示账号选择弹窗...")
@@ -733,12 +825,12 @@ class SinglePublishPage(BasePage):
             file_size = os.path.getsize(file_path)
             file_name = os.path.basename(file_path)
             size_mb = file_size / (1024 * 1024)
-            self.file_info_label.setText(f"{file_name}\n大小: {size_mb:.2f} MB")
+            self.file_info_label.setText(f"{file_name} | 大小: {size_mb:.2f} MB")
             
-            # 如果标题为空，使用文件名
-            if not self.title_edit.text():
-                title = os.path.splitext(file_name)[0]
-                self.title_edit.setText(title)
+            # 取消默认用文件名填充标题的行为
+            # if not self.title_edit.text():
+            #     title = os.path.splitext(file_name)[0]
+            #     self.title_edit.setText(title)
             
             # 启用发布按钮
             self._update_publish_button_state()
@@ -797,7 +889,9 @@ class SinglePublishPage(BasePage):
         )
         
         if file_path:
-            self.cover_path_edit.setText(file_path)
+            import os
+            self.selected_cover_path = file_path
+            self.cover_path_label.setText(os.path.basename(file_path))
 
     def _on_ai_cover_clicked(self):
         """点击AI封面生成"""
@@ -814,14 +908,21 @@ class SinglePublishPage(BasePage):
         else:
             QMessageBox.information(self, "提示", "AI生成封面功能将在后续版本中推出，敬请期待！")
 
-    def _on_first_frame_toggled(self):
-        """处理首帧复选框状态变化"""
-        is_checked = self.check_default_first_frame.isChecked()
-        self.cover_path_edit.setEnabled(not is_checked)
-        self.btn_browse_cover.setEnabled(not is_checked)
-        if is_checked:
-            self.cover_path_edit.clear()
-            self.cover_path_edit.setPlaceholderText("默认自动截取...")
+    def _on_cover_type_toggled(self):
+        """处理封面类型单选框状态变化"""
+        is_local_cover = self.radio_local_cover.isChecked()
+        self.btn_browse_cover.setEnabled(is_local_cover)
+        self.btn_ai_cover.setEnabled(is_local_cover)
+        
+        if not is_local_cover:
+            self.selected_cover_path = ""
+            self.cover_path_label.setText("未选择本地封面")
+        else:
+            if not getattr(self, 'selected_cover_path', ""):
+                self.cover_path_label.setText("请选择或生成封面图片")
+            else:
+                import os
+                self.cover_path_label.setText(os.path.basename(self.selected_cover_path))
     
     def _update_publish_button_state(self):
         """更新发布按钮状态"""
@@ -852,15 +953,10 @@ class SinglePublishPage(BasePage):
             QMessageBox.warning(self, "错误", "所选账号组为空")
             return
         
-        # 获取发布信息
+        # 获取发布信息：简介=全文（含 #话题）；话题仅从简介中解析（#关键词 后跟空格才确认，与抖音一致）
         title = self.title_edit.text() or os.path.splitext(os.path.basename(self.selected_file_path))[0]
         description = self.desc_edit.toPlainText() if hasattr(self.desc_edit, 'toPlainText') else self.desc_edit.text()
-        
-        # 获取标签信息，并转为数组(格式: 类型|内容)
-        tags = []
-        if hasattr(self, 'tag_values'):
-            # 将所有非空的标签类型和内容拼接为 "类型|内容" 格式
-            tags = [f"{k}|{v.strip()}" for k, v in self.tag_values.items() if v.strip()]
+        tags = _parse_topic_list(description)  # 与 _parse_topic_ranges 一致，仅「#关键词+空格」计入
         
         # 更新状态
         self.status_label.setText(f"正在提交 {len(target_accounts)} 个任务...")
@@ -905,10 +1001,12 @@ class SinglePublishPage(BasePage):
                 date = self.date_picker.date
                 time = self.time_picker.time
                 dt = QDateTime(date, time)
-                scheduled_time = dt.toString(Qt.ISODate)
+                scheduled_time = dt.toString("yyyy-MM-dd HH:mm")  # st_str 格式
 
             # 获取封面路径
-            cover_path = self.cover_path_edit.text() if hasattr(self, 'cover_path_edit') else None
+            cover_path = None
+            if hasattr(self, 'radio_local_cover') and self.radio_local_cover.isChecked():
+                cover_path = getattr(self, 'selected_cover_path', None)
             
             # 使用 self.tag_values 安全获取扩展字段
             tv = getattr(self, 'tag_values', {})
@@ -979,7 +1077,7 @@ class SinglePublishPage(BasePage):
             
             msg = msg_base
             if scheduled_time:
-                msg += f" (定时: {dt.toString('yyyy-MM-dd HH:mm')})"
+                msg += f" (定时: {scheduled_time})"
             
             # 操作后重置编辑状态
             self.editing_record_id = None
@@ -991,10 +1089,42 @@ class SinglePublishPage(BasePage):
             logger.error(f"添加到发布列表失败: {e}", exc_info=True)
             self._on_publish_error(str(e))
     
+    def _clear_form_after_add(self):
+        """添加到发布列表成功后清空任务内容，便于继续添加新任务（保留账号选择）。"""
+        self.selected_file_path = ""
+        self.editing_record_id = None
+        if hasattr(self, "file_info_label") and self.file_info_label:
+            self.file_info_label.setText("暂未选择视频")
+        if hasattr(self, "preview_label") and self.preview_label:
+            self.preview_label.setPixmap(QPixmap())
+            self.preview_label.setText("视频预览窗口")
+            self.preview_label.setStyleSheet(
+                "background-color: #f8f8f8; border: 2px dashed #ddd; border-radius: 12px; color: #888; font-weight: bold;"
+            )
+        if hasattr(self, "title_edit") and self.title_edit:
+            self.title_edit.clear()
+        if hasattr(self, "desc_edit") and self.desc_edit:
+            self.desc_edit.setPlainText("")
+        self.selected_cover_path = ""
+        if hasattr(self, "radio_first_frame") and self.radio_first_frame:
+            self.radio_first_frame.setChecked(True)
+        if hasattr(self, "cover_path_label") and self.cover_path_label:
+            self.cover_path_label.setText("未选择本地封面")
+        if hasattr(self, "tag_values"):
+            self.tag_values = {}
+        if hasattr(self, "tag_type_combo") and hasattr(self, "tag_content_edit"):
+            self.tag_content_edit.setText("")
+        if hasattr(self, "status_label") and self.status_label:
+            self.status_label.setText("准备就绪")
+        if hasattr(self, "btn_publish") and self.btn_publish:
+            self.btn_publish.setText("添加到发布列表")
+        self._update_publish_button_state()
+
     def _on_publish_success(self, message: str):
         """发布成功"""
         self.status_label.setText("✓ 发布成功！")
         self.btn_publish.setEnabled(True)
+        self._clear_form_after_add()
         
         if FLUENT_WIDGETS_AVAILABLE:
             InfoBar.success(
@@ -1009,11 +1139,14 @@ class SinglePublishPage(BasePage):
         
         self.publish_completed.emit(True, message)
         
-        # 跳转到发布列表页面
+        # 跳转到发布列表页面（使用 navigate_to 以支持惰性加载：未打开过发布列表时也会创建并切换）
         try:
             main_window = self.window()
-            if hasattr(main_window, 'switchTo') and hasattr(main_window, 'publish_list_page'):
-                main_window.switchTo(main_window.publish_list_page)
+            if hasattr(main_window, "navigate_to"):
+                main_window.navigate_to("publish_list_page")
+            else:
+                if hasattr(main_window, "switchTo") and hasattr(main_window, "publish_list_page"):
+                    main_window.switchTo(main_window.publish_list_page)
         except Exception as e:
             logger.error(f"跳转发布列表失败: {e}")
     
@@ -1037,6 +1170,8 @@ class SinglePublishPage(BasePage):
 
     def set_publish_data(self, record: dict):
         """回填发布数据 (用于编辑或重新发布)"""
+        import os
+        import asyncio
         # 判断是修改待发布记录，还是重用已发布记录
         status = record.get('status', '')
         if status in ['success', 'failed', 'completed']:
@@ -1048,11 +1183,11 @@ class SinglePublishPage(BasePage):
             self.editing_record_id = record.get('id')
             self.btn_publish.setText("保存修改")
         
-        # 1. 基础文本
+        # 1. 基础文本（简介用 setPlainText 以便话题高亮逻辑正确解析）
         title = record.get('title', '')
         description = record.get('description', '')
         self.title_edit.setText(title)
-        self.desc_edit.setText(description)
+        self.desc_edit.setPlainText(description)
         
         # 2. 文件处理
         file_path = record.get('file_path', '')
@@ -1061,7 +1196,7 @@ class SinglePublishPage(BasePage):
             file_name = os.path.basename(file_path)
             file_size = os.path.getsize(file_path)
             size_mb = file_size / (1024 * 1024)
-            self.file_info_label.setText(f"{file_name}\n大小: {size_mb:.2f} MB")
+            self.file_info_label.setText(f"{file_name} | 大小: {size_mb:.2f} MB")
             
             # 加载缩略图
             asyncio.create_task(self._load_thumbnail_async(file_path))
@@ -1069,8 +1204,25 @@ class SinglePublishPage(BasePage):
             if file_path:
                 self.file_info_label.setText(f"文件不存在: {os.path.basename(file_path)}")
             self.selected_file_path = ""
-            
-        # 3. 标签处理
+        # 3. 封面处理
+        cover_path = record.get('cover_path', '')
+        if cover_path:
+            # 存在自定义封面，切换到本地封面模式
+            if hasattr(self, 'radio_local_cover'):
+                self.radio_local_cover.setChecked(True)
+                if hasattr(self, 'cover_path_label'):
+                    import os
+                    self.selected_cover_path = cover_path
+                    self.cover_path_label.setText(os.path.basename(cover_path))
+        else:
+            # 没有自定义封面，默认使用首帧
+            if hasattr(self, 'radio_first_frame'):
+                self.radio_first_frame.setChecked(True)
+            if hasattr(self, 'cover_path_label'):
+                self.selected_cover_path = ""
+                self.cover_path_label.setText("未选择本地封面")
+
+        # 4. 标签处理
         tags_str = record.get('tags', '')
         if tags_str:
             # 简单处理：如果描述里没有标签，追加到描述末尾

@@ -22,12 +22,15 @@ class PathManager:
         if cls._resource_dir is None:
             if getattr(sys, 'frozen', False):
                 # 打包环境 (PyInstaller / Nuitka)
-                cls._resource_dir = Path(sys.executable).parent
+                if hasattr(sys, '_MEIPASS'):
+                    # PyInstaller 运行时解压的临时资源目录
+                    cls._resource_dir = Path(sys._MEIPASS)
+                else:
+                    # Nuitka 运行时的可执行文件所在目录
+                    cls._resource_dir = Path(sys.executable).parent
             else:
-                # 开发环境 (假设是在 main.py 所在的根目录运行)
-                # 使用 main.py 的绝对路径来确定项目根目录
-                # 这里假设 main.py 在项目根目录，或者通过 cwd 判断
-                cls._resource_dir = Path(os.getcwd())
+                # 开发环境 (根据当前文件位置往上推算根目录: src/infrastructure/common -> root)
+                cls._resource_dir = Path(os.path.abspath(__file__)).parent.parent.parent.parent
         return cls._resource_dir
 
     @classmethod

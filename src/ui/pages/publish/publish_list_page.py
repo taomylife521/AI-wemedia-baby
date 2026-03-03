@@ -17,6 +17,7 @@ from qasync import asyncSlot
 from .publish_records_page import PublishRecordsPage
 from src.ui.components.log_display_widget import LogDisplayWidget
 from qfluentwidgets import InfoBar, MessageBox
+import os
 
 
 class PublishListPage(PublishRecordsPage):
@@ -49,13 +50,8 @@ class PublishListPage(PublishRecordsPage):
         # 添加到主内容布局底部
         self.content_layout.addWidget(self.log_widget)
         
-        # 启动日志监听
-        target_loggers = [
-            "src.services.publish",
-            "src.infrastructure.plugins.builtin_plugins.douyin_plugin",
-            "src.infrastructure.browser.browser_manager",
-            "src.infrastructure.browser.browser_factory"
-        ]
+        # 发布日志界面仅监听「用户可见日志」：按步骤显示「时间 + 步骤名 + 状态」，简洁易读；完整调试日志仍在终端输出
+        target_loggers = ["publish.user_log"]
         self.log_widget.start_logging(target_loggers)
         
         # 3. 自动发布监听
@@ -138,6 +134,20 @@ class PublishListPage(PublishRecordsPage):
                 account_name = task.get('platform_username') 
                 platform = task.get('platform')
                 file_path = task.get('file_path')
+                
+                # 识别当前发布类型
+                publish_type = "video"
+                if file_path:
+                    # 分辨单个或多个文件，只要存在图片拓展即认为是图文发布
+                    paths = [p.strip().lower() for p in file_path.split(',')]
+                    if any(p.endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif')) for p in paths):
+                        publish_type = "image"
+                        
+                pub_type_zh = "图文" if publish_type == "image" else "视频"
+                
+                # 显式输出终端日志
+                logger.info(f"判断发布类型为: {pub_type_zh}发布 (publish_type={publish_type}), 解析文件: {file_path}")
+
                 title = task.get('title') or ""
                 desc = task.get('description') or ""
                 tags_str = task.get('tags') or ""
@@ -151,11 +161,14 @@ class PublishListPage(PublishRecordsPage):
                     await asyncio.sleep(1)
                     continue
 
-                self.log_widget.append_text(f"---")
-                self.log_widget.append_text(f"⏳ 准备执行任务 [ID: {task_id}]: {platform} - {account_name}")
+                # 用户可见日志（发布日志框只监听 publish.user_log）
+                user_log = logging.getLogger("publish.user_log")
+                basename = os.path.basename(str(file_path).split(",")[0].strip()) if file_path else ""
+                user_log.info(f"[准备] 平台={platform} 账号={account_name} 类型={pub_type_zh} 任务ID={task_id}")
+                user_log.info(f"[准备] 文件={basename} 路径={file_path}")
                 
                 # ==== 1. 严格的前置状态校验 ====
-                self.log_widget.append_text(f"🔍 正在复用账号库校验机制检测账号 {account_name} 是否在线...")
+                user_log.info("[检测] 账号在线检测：开始")
                 try:
                     # 去 Account库精准提取该账号id和信息以便校验
                     platform_accounts = await account_repo.find_all(user_id=self.user_id, platform=platform)
@@ -171,18 +184,18 @@ class PublishListPage(PublishRecordsPage):
                     
                     if not res_info.get('is_logged_in'):
                          error_reason = res_info.get('error', 'Cookie失效或未登录')
-                         self.log_widget.append_error(f"🚨 前置检查失败: 账号已掉线 ({error_reason})，自动跳过调起浏览器！")
+                         user_log.warning(f"[检测] 账号在线检测：掉线（{error_reason}）")
                          if db_publish:
                              await db_publish.update_status(task_id, 'failed', error_message="已掉线，失败")
                          self._load_publish_records()
                          await asyncio.sleep(1)
                          continue
                     else:
-                         self.log_widget.append_text(f"✅ 前置检查通过: 账号处于在线状态。")
+                         user_log.info("[检测] 账号在线检测：在线")
                 except asyncio.CancelledError:
                     raise
                 except Exception as check_e:
-                    self.log_widget.append_error(f"🚨 前置检查发生异常: {str(check_e)}，视为不可用，终止任务。")
+                    user_log.warning(f"[检测] 账号在线检测：异常（{str(check_e)}）")
                     if db_publish:
                         await db_publish.update_status(task_id, 'failed', error_message=f"账号检测异常: {str(check_e)}")
                     self._load_publish_records()
@@ -195,8 +208,6 @@ class PublishListPage(PublishRecordsPage):
                     if not self._is_publishing_loop_active:
                         break # 如果等待期间被立刻取消了
                     
-                    self.log_widget.append_text(f"▶️ 正在启动浏览器执行发布流程...")
-                    
                     # 获取配置参数
                     is_headful = True
                     if hasattr(self, 'headless_check'):
@@ -206,6 +217,8 @@ class PublishListPage(PublishRecordsPage):
                          val = self.combo_speed_setting.currentData()
                          if val:
                              speed_rate = float(val)
+                    
+                    user_log.info(f"[启动] 开始启动发布流程（速度={speed_rate:.1f}x）")
                              
                     # 开始包装一层单独的任务执行供中途可取消操作
                     self.current_task = asyncio.create_task(publish_service.publish_single(
@@ -213,13 +226,16 @@ class PublishListPage(PublishRecordsPage):
                         account_name=account_name,
                         platform=platform,
                         file_path=file_path,
+                        publish_type=publish_type,
                         title=title,
                         description=desc,
                         tags=tags,
                         headless=not is_headful,
                         speed_rate=speed_rate,
                         pause_event=self.publish_pause_event,
-                        cover_type="first_frame"
+                        cover_type=task.get("cover_type") or ("custom" if task.get("cover_path") else "first_frame"),
+                        cover_path=task.get("cover_path"),
+                        scheduled_publish_time=task.get("scheduled_publish_time"),
                     ))
                     
                     result = await self.current_task

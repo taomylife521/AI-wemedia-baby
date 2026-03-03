@@ -6,7 +6,7 @@
 
 import logging
 from typing import List, Optional
-from PySide6.QtWidgets import QWidget, QTextEdit, QVBoxLayout, QLabel
+from PySide6.QtWidgets import QWidget, QTextEdit, QVBoxLayout, QHBoxLayout, QLabel
 from PySide6.QtCore import Qt, QObject, Signal, Slot
 from PySide6.QtGui import QFont, QTextCursor
 
@@ -20,16 +20,26 @@ except ImportError:
 
 
 class GuiLogHandler(logging.Handler, QObject):
-    """GUI 日志处理器，将日志信号发射到界面"""
+    """GUI 日志处理器，将日志信号发射到界面。
+    对 publish.user_log 使用简短格式（仅时间+消息），便于用户阅读；其他 logger 使用完整格式（调试用）。
+    """
     log_signal = Signal(str, str)  # msg, levelname
+
+    # 用户日志简短格式：仅时间 + 消息，供发布日志等界面展示
+    USER_FORMATTER = logging.Formatter("%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    # 完整格式：供调试类日志
+    FULL_FORMATTER = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
     def __init__(self):
         logging.Handler.__init__(self)
         QObject.__init__(self)
-        self.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        self.setFormatter(self.FULL_FORMATTER)
 
     def emit(self, record):
-        msg = self.format(record)
+        if record.name == "publish.user_log":
+            msg = self.USER_FORMATTER.format(record)
+        else:
+            msg = self.FULL_FORMATTER.format(record)
         self.log_signal.emit(msg, record.levelname)
 
 
@@ -48,13 +58,33 @@ class LogDisplayWidget(CardWidget if FLUENT_WIDGETS_AVAILABLE else QWidget):
     def _setup_ui(self, title_text: str):
         layout = QVBoxLayout(self)
         
+        # 头部水平布局
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        
         # 标题
         if FLUENT_WIDGETS_AVAILABLE:
             title_label = StrongBodyLabel(title_text, self)
         else:
             title_label = QLabel(title_text, self)
             title_label.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
-        layout.addWidget(title_label)
+        header_layout.addWidget(title_label)
+        
+        header_layout.addStretch(1)
+        
+        # 清空按钮
+        if FLUENT_WIDGETS_AVAILABLE:
+            from qfluentwidgets import PushButton, FluentIcon
+            self.clear_btn = PushButton(FluentIcon.DELETE, "清空日志", self)
+        else:
+            from PySide6.QtWidgets import QPushButton
+            self.clear_btn = QPushButton("清空日志", self)
+            
+        self.clear_btn.clicked.connect(self.clear_logs)
+        header_layout.addWidget(self.clear_btn)
+        
+        # 将头部布局加入主布局
+        layout.addLayout(header_layout)
             
         # 文本框
         self.log_text_edit = QTextEdit(self)
@@ -103,6 +133,10 @@ class LogDisplayWidget(CardWidget if FLUENT_WIDGETS_AVAILABLE else QWidget):
         """追加普通文本"""
         self.log_text_edit.append(text)
         self._auto_scroll()
+
+    def append_warning(self, text: str):
+        """追加警告文本 (橙色)"""
+        self.append_html(f'<br><span style="color: #ff9800; font-weight: bold;">⚠️ {text}</span><br>')
 
     def append_error(self, text: str):
         """追加错误文本 (红色)"""

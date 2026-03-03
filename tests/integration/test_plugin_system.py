@@ -8,9 +8,9 @@ import sys
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
-from src.plugins.plugin_manager import PluginManager
-from src.plugins.interfaces.login_plugin import LoginPluginInterface
-from src.config.feature_flags import USE_PLUGIN_SYSTEM
+from src.plugins.core.plugin_manager import PluginManager
+from src.plugins.core.interfaces.login_plugin import LoginPluginInterface
+from config.feature_flags import USE_PLUGIN_SYSTEM
 
 class TestPluginSystem(unittest.TestCase):
     

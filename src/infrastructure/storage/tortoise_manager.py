@@ -28,8 +28,7 @@ TORTOISE_ORM_CONFIG = {
         "models": {
             "models": [
                 "src.infrastructure.storage.orm_models",
-                "aerich.models",
-            ],
+            ] + (["aerich.models"] if not __import__("sys").argv[0].endswith(".exe") else []),
             "default_connection": "default",
         }
     },

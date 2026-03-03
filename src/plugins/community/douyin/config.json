@@ -6,8 +6,8 @@
     "cookie_keys": ["sessionid", "passport_csrf_token"],
     "content_types": ["video", "image"],
     "limits": {
-        "title_max_length": 55,
-        "description_max_length": 2200,
+        "title_max_length": 30,
+        "description_max_length": 1000,
         "max_topics": 5
     }
 }
