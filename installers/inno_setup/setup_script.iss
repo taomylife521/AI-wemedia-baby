@@ -11,7 +11,7 @@
 #endif
 
 #define MyAppName "WeMediaBaby"
-#define MyAppVersion "1.0.2"
+#define MyAppVersion "1.0.0"
 #define MyAppPublisher "MediaBaby Team"
 #define MyAppURL "https://github.com/your-repo/wemedia-baby"
 #define MyAppExeName "WeMediaBaby.exe"

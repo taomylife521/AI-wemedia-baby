@@ -1,2 +1,0 @@
-{"sessionId": "230e3b", "timestamp": 1772458402364, "location": "single_publish_page.py:_on_publish_success", "message": "add_to_list success, before nav", "data": {"window_type": "MainWindow", "has_switchTo": true, "has_publish_list_page": true, "has_navigate_to": true}, "hypothesisId": "H1"}
-{"sessionId": "230e3b", "runId": "post-fix", "timestamp": 1772458402376, "location": "single_publish_page.py:_on_publish_success", "message": "calling navigate_to(publish_list_page)", "hypothesisId": "H5"}
